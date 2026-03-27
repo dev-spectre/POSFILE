@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from 'react';
 import { X, CreditCard, Smartphone, Banknote, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
