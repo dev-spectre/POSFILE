@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export interface Restaurant {
+  id?: string;
   _id?: string;
   restaurantName: string;
   adminUsername: string;
@@ -15,6 +16,7 @@ export interface Restaurant {
 }
 
 export interface MenuItem {
+  id?: string;
   _id?: string;
   name: string;
   price: number;
@@ -33,6 +35,7 @@ export interface CartItem extends MenuItem {
 }
 
 export interface Order {
+  id?: string;
   _id?: string;
   orderId: string;
   items: CartItem[];
@@ -107,11 +110,12 @@ export const useStore = create<CombinedState>()(
 
       addToCart: (item: MenuItem) =>
         set((state) => {
-          const existing = state.cart.find((c) => c._id === item._id);
+          const itemId = item.id || item._id;
+          const existing = state.cart.find((c) => (c.id || c._id) === itemId);
           if (existing) {
             return {
               cart: state.cart.map((c) =>
-                c._id === item._id ? { ...c, quantity: c.quantity + 1 } : c
+                (c.id || c._id) === itemId ? { ...c, quantity: c.quantity + 1 } : c
               ),
             };
           }
@@ -120,13 +124,13 @@ export const useStore = create<CombinedState>()(
 
       removeFromCart: (id: string) =>
         set((state) => ({
-          cart: state.cart.filter((c) => c._id !== id),
+          cart: state.cart.filter((c) => (c.id || c._id) !== id),
         })),
 
       updateQuantity: (id: string, quantity: number) =>
         set((state) => ({
           cart: state.cart.map((c) =>
-            c._id === id ? { ...c, quantity: Math.max(1, quantity) } : c
+            (c.id || c._id) === id ? { ...c, quantity: Math.max(1, quantity) } : c
           ),
         })),
 

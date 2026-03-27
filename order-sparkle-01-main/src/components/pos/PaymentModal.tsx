@@ -17,18 +17,31 @@ const paymentMethods: { id: PaymentMethod; label: string; icon: React.ReactNode 
 ];
 
 const PaymentModal = ({ open, onClose }: PaymentModalProps) => {
-  const { getTotal, clearCart } = useStore();
+  const { cart, getTotal, clearCart } = useStore();
   const [selected, setSelected] = useState<any | null>(null);
+  const [customerPhone, setCustomerPhone] = useState('');
   const [paid, setPaid] = useState(false);
   const total = getTotal();
 
   const handlePay = () => {
     if (!selected) return;
+    
+    if (selected === 'cash' && customerPhone) {
+      const orderId = Math.floor(100000 + Math.random() * 900000);
+      let text = `*✨ Fast Billing Receipt ✨*\n\nOrder ID: #${orderId}\n`;
+      cart.forEach((item: any) => {
+        text += `• ${item.quantity}x ${item.name} - ₹${(item.finalPrice * item.quantity).toFixed(2)}\n`;
+      });
+      text += `\n*Total Paid: ₹${total.toFixed(2)}*\n\nThank you for your visit! 🍽️`;
+      window.open(`https://wa.me/${customerPhone}?text=${encodeURIComponent(text)}`, '_blank');
+    }
+
     setPaid(true);
     setTimeout(() => {
       clearCart();
       setPaid(false);
       setSelected(null);
+      setCustomerPhone('');
       onClose();
     }, 2000);
   };
@@ -85,6 +98,17 @@ const PaymentModal = ({ open, onClose }: PaymentModalProps) => {
                 <div className="text-center mb-6">
                   <p className="text-sm text-muted-foreground">Total Amount</p>
                   <p className="font-display text-4xl font-bold text-primary">₹{total.toFixed(2)}</p>
+                </div>
+
+                <div className="space-y-3 mb-6">
+                  <p className="text-sm font-medium text-muted-foreground">WhatsApp Number</p>
+                  <input
+                    type="tel"
+                    placeholder="Enter customer number"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    className="w-full px-4 py-2 bg-secondary/50 border border-border rounded-lg outline-none focus:border-primary transition-colors"
+                  />
                 </div>
 
                 <div className="space-y-3 mb-6">

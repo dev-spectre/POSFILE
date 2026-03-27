@@ -75,21 +75,26 @@ export const updateMenuItem = async (req, res) => {
     const { name, category, price, discountPercentage, description, image, isAvailable, preparationTime, isVeg } = req.body;
     console.log(`📡 Updating menu item: ${id}`);
 
-    // Calculate final price if price or discount changed
-    let finalPrice;
+    // Verify ownership first
     const currentItem = await prisma.menuItem.findUnique({ where: { id } });
     if (!currentItem) {
       return res.status(404).json({ error: 'Menu item not found' });
     }
+    if (currentItem.restaurantId !== req.restaurantId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
+    // Calculate final price if price or discount changed
+    let finalPrice;
     if (price !== undefined || discountPercentage !== undefined) {
       const newPrice = price !== undefined ? parseFloat(price) : currentItem.price;
       const newDiscount = discountPercentage !== undefined ? parseFloat(discountPercentage) : currentItem.discountPercentage;
       finalPrice = newPrice - (newPrice * newDiscount) / 100;
     }
 
+    // Delete by `id` only (no compound where — Prisma requires @@unique for that)
     const menuItem = await prisma.menuItem.update({
-      where: { id, restaurantId: req.restaurantId },
+      where: { id },
       data: {
         name,
         category,
@@ -118,18 +123,27 @@ export const updateMenuItem = async (req, res) => {
 export const deleteMenuItem = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`📡 Deleting menu item: ${id} for restaurant: ${req.restaurantId}`);
 
-    await prisma.menuItem.delete({
-      where: {
-        id,
-        restaurantId: req.restaurantId,
-      },
-    });
+    // Verify ownership first before deleting
+    const existing = await prisma.menuItem.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Menu item not found' });
+    }
+    if (existing.restaurantId !== req.restaurantId) {
+      return res.status(403).json({ error: 'Unauthorized: This item does not belong to your restaurant' });
+    }
 
-    res.status(200).json({
-      message: 'Menu item deleted successfully',
-    });
+    // Delete linked OrderItems first (FK constraint), then delete the MenuItem — in one transaction
+    await prisma.$transaction([
+      prisma.orderItem.deleteMany({ where: { menuItemId: id } }),
+      prisma.menuItem.delete({ where: { id } }),
+    ]);
+
+    console.log(`✅ Menu item deleted: ${id}`);
+    res.status(200).json({ message: 'Menu item deleted successfully' });
   } catch (error) {
+    console.error('❌ Error in deleteMenuItem:', error);
     res.status(500).json({ error: error.message });
   }
 };

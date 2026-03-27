@@ -22,7 +22,7 @@ const MenuItemCard = ({ item, onAdd }: MenuItemCardProps) => {
       {/* Image Section */}
       <div className="relative h-44 overflow-hidden">
         <img 
-          src={getFoodImage(item.name, item.category)} 
+          src={item.image || getFoodImage(item.name, item.category)} 
           alt={item.name}
           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
         />

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@/components/ui/use-toast';
-import { Trash2, Edit2, Plus, Loader2, Search, Filter, Camera, ArrowLeft, ChevronRight, Check } from 'lucide-react';
+import { Trash2, Edit2, Plus, Loader2, Search, Filter, ArrowLeft, ChevronRight, Check, ImagePlus, X as XIcon } from 'lucide-react';
 import { MenuItem } from '@/store/posStore';
 import { getFoodImage } from '@/lib/imageHelper';
 
@@ -23,6 +23,7 @@ export default function MenuAdminPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     price: 0,
@@ -51,26 +52,23 @@ export default function MenuAdminPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const isEditing = !!editingId;
-    
-    // Save original state for possible rollback (optional, but good practice)
-    // For now, we'll just update state after success or use simple optimistic update
-    
     try {
       if (isEditing) {
         const response = await menuAPI.updateItem(editingId, formData);
-        const updatedItem = response.data;
-        setMenuItems(prev => prev.map(item => item._id === editingId ? updatedItem : item));
-        toast({ title: 'Menu Updated', description: 'Item has been successfully modified.' });
+        // Backend returns { menuItem: {...} }
+        const updatedItem = response.data.menuItem || response.data;
+        setMenuItems(prev => prev.map(item => (item.id || item._id) === editingId ? updatedItem : item));
+        toast({ title: '✅ Menu Updated', description: `"${updatedItem.name}" has been successfully modified.` });
       } else {
         const response = await menuAPI.addItem(formData);
-        const newItem = response.data;
+        // Backend returns { menuItem: {...} }
+        const newItem = response.data.menuItem || response.data;
         setMenuItems(prev => [...prev, newItem]);
-        toast({ title: 'Item Added', description: 'Your new menu item is now live!' });
+        toast({ title: '🎉 Item Added', description: `"${newItem.name}" is now live on your menu!` });
       }
       resetForm();
     } catch (error: any) {
       toast({ title: 'Error', description: error.response?.data?.error || 'Failed to save item', variant: 'destructive' });
-      // If error, re-fetch to ensure sync
       fetchMenuItems();
     }
   };
@@ -79,10 +77,11 @@ export default function MenuAdminPage() {
     setFormData({ name: '', price: 0, category: 'Main Course', discountPercentage: 0, description: '', isVeg: false, image: '' });
     setEditingId(null);
     setShowForm(false);
+    setImagePreview(null);
   };
 
   const handleEdit = (item: MenuItem) => {
-    setEditingId(item._id || null);
+    setEditingId(item.id || item._id || null);
     setFormData({
       name: item.name,
       price: item.price,
@@ -92,19 +91,42 @@ export default function MenuAdminPage() {
       isVeg: item.isVeg || false,
       image: item.image || '',
     });
+    setImagePreview(item.image || null);
     setShowForm(true);
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast({ title: 'File too large', description: 'Please upload an image under 2MB.', variant: 'destructive' });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result as string;
+      setImagePreview(base64);
+      setFormData(prev => ({ ...prev, image: base64 }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeImage = () => {
+    setImagePreview(null);
+    setFormData(prev => ({ ...prev, image: '' }));
+  };
+
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to remove this item?')) return;
+    const item = menuItems.find(i => (i.id || i._id) === id);
+    if (!confirm(`Remove "${item?.name}" from the menu?`)) return;
     
     // Optimistic Update
     const originalItems = [...menuItems];
-    setMenuItems(prev => prev.filter(item => item._id !== id));
+    setMenuItems(prev => prev.filter(item => (item.id || item._id) !== id));
     
     try {
       await menuAPI.deleteItem(id);
-      toast({ title: 'Item Removed', description: 'Menu has been updated.' });
+      toast({ title: '🗑️ Item Removed', description: `"${item?.name}" has been deleted from your menu.` });
     } catch (error: any) {
       setMenuItems(originalItems);
       toast({ title: 'Error', description: 'Failed to delete item. Please try again.', variant: 'destructive' });
@@ -119,15 +141,15 @@ export default function MenuAdminPage() {
   return (
     <div className="min-h-screen bg-[#fafaf9] dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 font-sans">
       {/* Header Section */}
-      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-8 sm:p-12">
+      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-6 sm:p-8 lg:p-12">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
              <Button variant="ghost" onClick={() => navigate('/dashboard')} className="rounded-full h-12 w-12 hover:bg-slate-100 dark:hover:bg-slate-800">
                <ArrowLeft className="h-6 w-6" />
              </Button>
             <div>
-              <h1 className="text-4xl font-black tracking-tighter">Menu Control</h1>
-              <p className="text-slate-500 font-medium">Design and refine your culinary offerings.</p>
+              <h1 className="text-3xl sm:text-4xl font-black tracking-tighter">Menu Control</h1>
+              <p className="text-sm sm:text-base text-slate-500 font-medium mt-1">Design and refine your culinary offerings.</p>
             </div>
           </div>
           <Button 
@@ -139,7 +161,7 @@ export default function MenuAdminPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto p-8 sm:p-12">
+      <main className="max-w-7xl mx-auto p-4 sm:p-8 lg:p-12">
         {/* Search & Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-10">
           <div className="relative flex-1">
@@ -152,26 +174,26 @@ export default function MenuAdminPage() {
               className="w-full h-14 pl-12 pr-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium transition-all"
             />
           </div>
-          <Button variant="outline" className="h-14 px-6 rounded-2xl border-slate-200 dark:border-slate-800 font-bold flex items-center gap-2">
-            <Filter className="h-5 w-5" /> Advanced Filters
+          <Button variant="outline" className="h-14 px-6 rounded-2xl border-slate-200 dark:border-slate-800 font-bold flex shrink-0 items-center justify-center gap-2">
+            <Filter className="h-5 w-5" /> Filters
           </Button>
         </div>
 
         {/* Form Modal */}
         <AnimatePresence>
           {showForm && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-md">
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-950/60 backdrop-blur-md">
               <motion.div 
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.9, opacity: 0 }}
-                className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[32px] overflow-hidden shadow-2xl"
+                className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-3xl sm:rounded-[32px] overflow-hidden shadow-2xl flex flex-col max-h-[90dvh]"
               >
-                <div className="p-8 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                  <h2 className="text-2xl font-black tracking-tight">{editingId ? 'Edit Menu Item' : 'New Master Item'}</h2>
+                <div className="p-5 sm:p-8 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
+                  <h2 className="text-xl sm:text-2xl font-black tracking-tight">{editingId ? 'Edit Menu Item' : 'New Master Item'}</h2>
                   <Button variant="ghost" onClick={resetForm} className="rounded-full">✕</Button>
                 </div>
-                <form onSubmit={handleSubmit} className="p-8">
+                <form onSubmit={handleSubmit} className="p-5 sm:p-8 overflow-y-auto flex-1 scrollbar-thin">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <label className="text-xs font-black uppercase tracking-widest text-slate-400">Item Name *</label>
@@ -219,6 +241,47 @@ export default function MenuAdminPage() {
                         className="w-full h-24 p-5 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl outline-none focus:ring-2 focus:ring-orange-500/20 text-sm font-medium"
                       />
                     </div>
+
+                    {/* Optional Image Upload */}
+                    <div className="sm:col-span-2 space-y-2">
+                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">
+                        Item Image <span className="text-slate-300 font-medium normal-case tracking-normal">(optional — auto-selected if not uploaded)</span>
+                      </label>
+                      {imagePreview ? (
+                        <div className="relative w-full h-48 rounded-2xl overflow-hidden group">
+                          <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <button
+                              type="button"
+                              onClick={removeImage}
+                              className="h-10 w-10 rounded-full bg-red-500 text-white flex items-center justify-center shadow-xl hover:scale-110 transition-transform"
+                            >
+                              <XIcon className="h-5 w-5" />
+                            </button>
+                          </div>
+                          <span className="absolute bottom-3 left-3 text-[10px] font-black uppercase tracking-widest text-white/80 bg-black/30 px-2 py-1 rounded-lg">Custom Image</span>
+                        </div>
+                      ) : (
+                        <label className="cursor-pointer block">
+                          <div className="w-full h-36 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center gap-3 hover:border-orange-400 hover:bg-orange-50/10 transition-all duration-200">
+                            <div className="h-12 w-12 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center">
+                              <ImagePlus className="h-6 w-6 text-orange-400" />
+                            </div>
+                            <div className="text-center">
+                              <p className="text-sm font-bold text-slate-600 dark:text-slate-300">Click to upload image</p>
+                              <p className="text-xs text-slate-400 font-medium mt-0.5">PNG, JPG, WEBP — max 2MB</p>
+                            </div>
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageUpload}
+                            className="hidden"
+                          />
+                        </label>
+                      )}
+                    </div>
+
                     <div className="flex items-center gap-8 px-2">
                        <label className="flex items-center gap-3 cursor-pointer group">
                          <div className={`h-6 w-6 rounded-lg border-2 flex items-center justify-center transition-all ${formData.isVeg ? 'bg-green-500 border-green-500 shadow-lg shadow-green-500/20' : 'border-slate-300'}`}>
@@ -229,7 +292,7 @@ export default function MenuAdminPage() {
                        </label>
                     </div>
                   </div>
-                  <div className="mt-10 flex gap-4">
+                  <div className="mt-8 sm:mt-10 flex flex-col-reverse sm:flex-row gap-3 sm:gap-4 pb-4">
                     <Button onClick={resetForm} variant="ghost" className="flex-1 h-14 font-bold text-slate-400 hover:text-red-500">Discard</Button>
                     <Button type="submit" className="pos-btn-primary flex-1 h-14">
                       {editingId ? 'Push Changes' : 'Add to Menu'}
@@ -252,7 +315,7 @@ export default function MenuAdminPage() {
             <AnimatePresence>
               {filteredItems.map((item, i) => (
                 <motion.div
-                  key={item._id || `admin-item-${i}`}
+                  key={(item.id || item._id) || `admin-item-${i}`}
                   layout
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -260,15 +323,15 @@ export default function MenuAdminPage() {
                   transition={{ delay: (i % 6) * 0.05 }}
                   className="bg-white dark:bg-slate-900 rounded-[2.5rem] overflow-hidden group border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-2xl transition-all duration-300 flex flex-col"
                 >
-                  <div className="relative h-56 overflow-hidden">
+                  <div className="relative h-48 w-full overflow-hidden">
                     <img 
-                      src={getFoodImage(item.name, item.category)} 
+                      src={item.image || getFoodImage(item.name, item.category)} 
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                     <div className="absolute top-5 right-5 flex gap-3 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
                       <button onClick={(e) => { e.stopPropagation(); handleEdit(item); }} className="h-11 w-11 rounded-2xl bg-white text-slate-950 flex items-center justify-center shadow-xl active:scale-90 transition-transform"><Edit2 className="h-5 w-5" /></button>
-                      <button onClick={(e) => { e.stopPropagation(); handleDelete(item._id!); }} className="h-11 w-11 rounded-2xl bg-red-500 text-white flex items-center justify-center shadow-xl active:scale-90 transition-transform"><Trash2 className="h-5 w-5" /></button>
+                      <button onClick={(e) => { e.stopPropagation(); handleDelete((item.id || item._id)!); }} className="h-11 w-11 rounded-2xl bg-red-500 text-white flex items-center justify-center shadow-xl active:scale-90 transition-transform"><Trash2 className="h-5 w-5" /></button>
                     </div>
                     {item.isVeg && <div className="absolute top-5 left-5 h-7 w-7 rounded-xl bg-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform"><div className="h-2.5 w-2.5 rounded-full bg-emerald-500" /></div>}
                   </div>

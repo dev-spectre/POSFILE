@@ -63,7 +63,7 @@ export default function POSPage() {
     setProcessingPayment(true);
     try {
       const orderData = {
-        items: cart.map((item) => ({ menuItemId: item._id, quantity: item.quantity })),
+        items: cart.map((item) => ({ menuItemId: item.id || item._id, quantity: item.quantity })),
         customerPhone,
         customerName: customerName || 'Guest',
         paymentMethod,
@@ -96,6 +96,10 @@ export default function POSPage() {
       } else {
         await orderAPI.markAsPaid(order.orderId);
         finalizeOrder(order);
+
+        if (paymentMethod === 'cash' && customerPhone) {
+          window.open(generateWhatsAppLink(order, cart, customerPhone, order.totalAmount), '_blank');
+        }
       }
     } catch (error: any) {
       toast({ title: 'Error', description: error.response?.data?.error || 'Failed to create order', variant: 'destructive' });
@@ -110,15 +114,19 @@ export default function POSPage() {
     setShowPayment(false);
   };
 
+  const generateWhatsAppLink = (orderInfo: any, cartItems: any[], phone: string, totalAmount: number) => {
+    let text = `*✨ Fast Billing Receipt ✨*\n\nOrder ID: #${orderInfo.orderId}\n`;
+    cartItems.forEach((item: any) => {
+      text += `• ${item.quantity}x ${item.name} - ₹${(item.finalPrice * item.quantity).toFixed(2)}\n`;
+    });
+    text += `\n*Total Paid: ₹${totalAmount.toFixed(2)}*\n\nThank you for your visit! 🍽️`;
+    return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+  };
+
   const sendWhatsAppBill = () => {
     if (!completedOrder) return;
     const { order, items, customerPhone, total } = completedOrder;
-    let text = `*✨ Fast Billing Receipt ✨*\n\nOrder ID: #${order.orderId}\n`;
-    items.forEach((item: any) => {
-      text += `• ${item.quantity}x ${item.name} - ₹${(item.finalPrice * item.quantity).toFixed(2)}\n`;
-    });
-    text += `\n*Total Paid: ₹${total.toFixed(2)}*\n\nThank you for your visit! 🍽️`;
-    window.open(`https://wa.me/${customerPhone}?text=${encodeURIComponent(text)}`, '_blank');
+    window.open(generateWhatsAppLink(order, items, customerPhone, total), '_blank');
   };
 
   const handleNewOrder = () => {
@@ -133,14 +141,14 @@ export default function POSPage() {
   return (
     <div className="min-h-screen bg-[#fafaf9] dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 flex flex-col font-sans">
       {/* Premium Header */}
-      <header className="h-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 px-6 sm:px-10 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => navigate('/dashboard')} className="rounded-full h-10 w-10 p-0">
+      <header className="h-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 px-4 sm:px-10 flex items-center justify-between">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <Button variant="ghost" onClick={() => navigate('/dashboard')} className="rounded-full h-10 w-10 p-0 hidden sm:flex">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-xl font-bold tracking-tight">Fast Billing</h1>
-            <p className="text-xs text-slate-500 font-medium">Counter #01 • Admin Mode</p>
+            <h1 className="text-xl sm:text-lg font-bold tracking-tight">Fast Billing</h1>
+            <p className="text-[10px] sm:text-xs text-slate-500 font-medium tracking-tight">Counter #01 • Admin</p>
           </div>
         </div>
         <div className="flex items-center gap-6">
@@ -154,9 +162,9 @@ export default function POSPage() {
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden max-h-[calc(100-5rem)]">
+      <main className="flex-1 flex flex-col lg:flex-row lg:overflow-hidden lg:max-h-[calc(100vh-5rem)]">
         {/* Left: Menu Side */}
-        <section className="flex-1 flex flex-col p-6 sm:p-8 overflow-y-auto scrollbar-thin">
+        <section className="flex-1 flex flex-col p-4 sm:p-8 lg:overflow-y-auto scrollbar-thin">
           {/* Categories */}
           <div className="flex gap-3 overflow-x-auto pb-6 no-scrollbar">
             {CATEGORIES.map((cat) => (
@@ -176,11 +184,11 @@ export default function POSPage() {
               <p className="font-bold text-slate-400">Loading your menu...</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               <AnimatePresence mode="popLayout">
                 {filteredItems.map((item, index) => (
                   <motion.div
-                    key={item._id || `item-${index}`}
+                    key={(item.id || item._id) || `item-${index}`}
                     layout
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -189,9 +197,9 @@ export default function POSPage() {
                     onClick={() => addToCart(item)}
                     className="group cursor-pointer overflow-hidden rounded-[2.5rem] bg-white dark:bg-slate-900 border-none shadow-sm hover:shadow-2xl transition-all duration-500 ring-1 ring-slate-100 dark:ring-slate-800"
                   >
-                    <div className="relative aspect-square overflow-hidden">
+                    <div className="relative h-48 w-full overflow-hidden">
                       <img 
-                        src={getFoodImage(item.name, item.category)} 
+                        src={item.image || getFoodImage(item.name, item.category)} 
                         className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
                         alt={item.name}
                       />
@@ -227,19 +235,19 @@ export default function POSPage() {
         </section>
 
         {/* Right: Cart Side */}
-        <aside className="w-full lg:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col shadow-2xl z-10 lg:sticky lg:top-20 lg:h-[calc(100vh-5rem)]">
-          <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-            <h2 className="text-xl font-black uppercase tracking-tight flex items-center gap-2">
+        <aside className="w-full lg:w-[420px] bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 flex flex-col relative z-20 lg:shadow-2xl lg:sticky lg:top-20 lg:max-h-[calc(100vh-5rem)]">
+          <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-900">
+            <h2 className="text-lg sm:text-xl font-black uppercase tracking-tight flex items-center gap-2">
               <ShoppingCart className="h-5 w-5 text-orange-500" /> Current Order
             </h2>
             <span className="bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full text-xs font-bold">{cart.length} Items</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 max-h-[50vh] lg:max-h-full">
             {cart.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center opacity-30">
-                <div className="h-20 w-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                  <ShoppingCart className="h-8 w-8" />
+              <div className="h-40 lg:h-full flex flex-col items-center justify-center text-center opacity-30">
+                <div className="h-16 w-16 lg:h-20 lg:w-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                  <ShoppingCart className="h-6 w-6 lg:h-8 lg:w-8" />
                 </div>
                 <p className="font-bold">Cart is empty</p>
                 <p className="text-xs mt-1">Add items to start billing</p>
@@ -248,7 +256,7 @@ export default function POSPage() {
               <AnimatePresence>
                 {cart.map((item) => (
                   <motion.div
-                    key={item._id}
+                    key={item.id || item._id}
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -20 }}
@@ -260,15 +268,15 @@ export default function POSPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start">
                         <h4 className="font-bold text-sm truncate pr-2">{item.name}</h4>
-                        <button onClick={() => removeFromCart(item._id!)} className="text-slate-300 hover:text-red-500 transition-colors">
+                        <button onClick={() => removeFromCart((item.id || item._id)!)} className="text-slate-300 hover:text-red-500 transition-colors">
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                       <div className="flex items-center justify-between mt-2">
                         <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                          <button onClick={() => updateQuantity(item._id!, item.quantity - 1)} className="h-6 w-6 rounded-md hover:bg-white dark:hover:bg-slate-700 shadow-sm flex items-center justify-center transition-all"><Minus className="h-3 w-3" /></button>
+                          <button onClick={() => updateQuantity((item.id || item._id)!, item.quantity - 1)} className="h-6 w-6 rounded-md hover:bg-white dark:hover:bg-slate-700 shadow-sm flex items-center justify-center transition-all"><Minus className="h-3 w-3" /></button>
                           <span className="text-xs font-black min-w-[20px] text-center">{item.quantity}</span>
-                          <button onClick={() => updateQuantity(item._id!, item.quantity + 1)} className="h-6 w-6 rounded-md hover:bg-white dark:hover:bg-slate-700 shadow-sm flex items-center justify-center transition-all"><Plus className="h-3 w-3" /></button>
+                          <button onClick={() => updateQuantity((item.id || item._id)!, item.quantity + 1)} className="h-6 w-6 rounded-md hover:bg-white dark:hover:bg-slate-700 shadow-sm flex items-center justify-center transition-all"><Plus className="h-3 w-3" /></button>
                         </div>
                         <span className="font-bold text-sm">₹{(item.finalPrice * item.quantity).toFixed(0)}</span>
                       </div>
@@ -280,7 +288,7 @@ export default function POSPage() {
           </div>
 
           {/* Pricing Summary */}
-          <div className="p-6 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 space-y-4">
+          <div className="p-4 sm:p-6 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 space-y-3 sm:space-y-4">
             <div className="space-y-2 text-sm">
               <div className="flex justify-between text-slate-500 font-medium">
                 <span>Subtotal</span>
@@ -297,23 +305,23 @@ export default function POSPage() {
                   value={discount || ''} 
                   placeholder="₹0"
                   onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-                  className="w-20 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-right font-black text-orange-600 focus:ring-1 focus:ring-orange-500 outline-none"
+                  className="w-16 sm:w-20 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-right font-black text-orange-600 focus:ring-1 focus:ring-orange-500 outline-none"
                 />
               </div>
-              <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-between items-end">
-                <span className="text-lg font-black uppercase tracking-tight">Total Amount</span>
-                <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">₹{getTotal().toFixed(0)}</span>
+              <div className="pt-3 sm:pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-between items-end">
+                <span className="text-base sm:text-lg font-black uppercase tracking-tight">Total Payable</span>
+                <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tighter">₹{getTotal().toFixed(0)}</span>
               </div>
             </div>
 
             <Button
               disabled={cart.length === 0}
               onClick={() => setShowPayment(true)}
-              className="pos-btn-primary w-full h-16 text-lg flex items-center justify-center gap-3 shadow-orange-500/20"
+              className="pos-btn-primary w-full h-14 sm:h-16 text-base sm:text-lg flex items-center justify-center gap-2 sm:gap-3 shadow-orange-500/20"
             >
-              Checkout Now <Zap className="h-5 w-5 fill-current" />
+              Checkout Now <Zap className="h-4 w-4 sm:h-5 sm:w-5 fill-current" />
             </Button>
-            <Button variant="ghost" className="w-full text-slate-400 hover:text-red-500" onClick={clearCart}>Cancel Order</Button>
+            <Button variant="ghost" className="w-full text-slate-400 hover:text-red-500 text-sm" onClick={clearCart}>Cancel Order</Button>
           </div>
         </aside>
       </main>
@@ -330,14 +338,14 @@ export default function POSPage() {
               className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" 
             />
             <motion.div
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="relative w-full max-w-lg h-full bg-white dark:bg-slate-950 shadow-2xl p-8 sm:p-12 overflow-y-auto"
+              className="relative w-full max-w-lg h-[90vh] sm:h-full bg-white dark:bg-slate-950 shadow-2xl p-6 sm:p-12 overflow-y-auto rounded-t-3xl sm:rounded-none mt-auto sm:mt-0"
             >
-              <h2 className="text-3xl font-black mb-2 tracking-tight">Payment Details</h2>
-              <p className="text-slate-500 mb-10 font-medium">Almost there! Finalize your customer's order.</p>
+              <h2 className="text-2xl sm:text-3xl font-black mb-2 tracking-tight">Payment Details</h2>
+              <p className="text-slate-500 mb-6 sm:mb-10 font-medium text-sm sm:text-base">Almost there! Finalize your customer's order.</p>
 
               <div className="space-y-8">
                 {/* Inputs */}

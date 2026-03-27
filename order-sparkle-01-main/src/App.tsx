@@ -11,6 +11,7 @@ import POSPage from "./pages/POSPage";
 import MenuAdminPage from "./pages/MenuAdminPage";
 import SalesPage from "./pages/SalesPage";
 import NotFound from "./pages/NotFound";
+import MobileNav from "@/components/layout/MobileNav";
 import { useStore } from "@/store/posStore";
 
 const queryClient = new QueryClient();
@@ -18,7 +19,12 @@ const queryClient = new QueryClient();
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useStore();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  return <>{children}</>;
+  return (
+    <div className="pb-24 md:pb-0 min-h-screen">
+      {children}
+      <MobileNav />
+    </div>
+  );
 };
 
 const App = () => (
