@@ -1,16 +1,19 @@
+import { useState } from 'react';
 import { Minus, Plus, Trash2, ShoppingBag } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { usePOSStore } from '@/store/posStore';
+import { useStore } from '@/store/posStore';
 
 interface OrderSummaryProps {
   onProceedToPay: () => void;
 }
 
 const OrderSummary = ({ onProceedToPay }: OrderSummaryProps) => {
-  const { order, updateQuantity, clearOrder, getTotal, getItemTotal, tableNumber, setTableNumber, orderId } =
-    usePOSStore();
+  const { cart, updateQuantity, clearCart, getTotal } = useStore();
+  const [tableNumber, setTableNumber] = useState('');
 
   const total = getTotal();
+
+  const getItemTotal = (item: any) => item.finalPrice * item.quantity;
 
   return (
     <div className="glass-panel h-full flex flex-col">
@@ -21,9 +24,6 @@ const OrderSummary = ({ onProceedToPay }: OrderSummaryProps) => {
           <h2 className="font-display font-bold text-lg text-foreground">Current Order</h2>
         </div>
         <div className="flex gap-2">
-          <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-1 rounded-md">
-            {orderId}
-          </span>
           <input
             type="text"
             value={tableNumber}
@@ -37,9 +37,9 @@ const OrderSummary = ({ onProceedToPay }: OrderSummaryProps) => {
       {/* Items */}
       <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-2">
         <AnimatePresence mode="popLayout">
-          {order.map((item) => (
+          {cart.map((item) => (
             <motion.div
-              key={item.id}
+              key={item._id}
               layout
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -48,12 +48,12 @@ const OrderSummary = ({ onProceedToPay }: OrderSummaryProps) => {
             >
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
-                <p className="text-xs text-muted-foreground">${item.price.toFixed(2)} each</p>
+                <p className="text-xs text-muted-foreground">₹{item.finalPrice.toFixed(2)} each</p>
               </div>
               <div className="flex items-center gap-1.5">
                 <motion.button
                   whileTap={{ scale: 0.85 }}
-                  onClick={() => updateQuantity(item.id, -1)}
+                  onClick={() => updateQuantity(item._id!, item.quantity - 1)}
                   className="w-7 h-7 rounded-md bg-secondary flex items-center justify-center text-foreground hover:bg-destructive hover:text-destructive-foreground transition-colors"
                 >
                   {item.quantity === 1 ? <Trash2 size={13} /> : <Minus size={13} />}
@@ -63,20 +63,20 @@ const OrderSummary = ({ onProceedToPay }: OrderSummaryProps) => {
                 </span>
                 <motion.button
                   whileTap={{ scale: 0.85 }}
-                  onClick={() => updateQuantity(item.id, 1)}
+                  onClick={() => updateQuantity(item._id!, item.quantity + 1)}
                   className="w-7 h-7 rounded-md bg-primary text-primary-foreground flex items-center justify-center"
                 >
                   <Plus size={13} />
                 </motion.button>
               </div>
-              <p className="text-sm font-bold text-foreground w-16 text-right">
-                ${getItemTotal(item).toFixed(2)}
+              <p className="text-sm font-bold text-foreground w-20 text-right">
+                ₹{getItemTotal(item).toFixed(2)}
               </p>
             </motion.div>
           ))}
         </AnimatePresence>
 
-        {order.length === 0 && (
+        {cart.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <ShoppingBag size={40} className="mb-3 opacity-30" />
             <p className="text-sm">No items added yet</p>
@@ -89,13 +89,13 @@ const OrderSummary = ({ onProceedToPay }: OrderSummaryProps) => {
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground">Subtotal</span>
           <span className="font-display text-xl font-bold text-foreground">
-            ${total.toFixed(2)}
+            ₹{total.toFixed(2)}
           </span>
         </div>
         <div className="flex gap-2">
           <button
-            onClick={clearOrder}
-            disabled={order.length === 0}
+            onClick={clearCart}
+            disabled={cart.length === 0}
             className="pos-btn-ghost flex-1 text-sm disabled:opacity-40"
           >
             Clear
@@ -103,10 +103,10 @@ const OrderSummary = ({ onProceedToPay }: OrderSummaryProps) => {
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={onProceedToPay}
-            disabled={order.length === 0}
+            disabled={cart.length === 0}
             className="pos-btn-primary flex-1 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Pay ${total.toFixed(2)}
+            Pay ₹{total.toFixed(2)}
           </motion.button>
         </div>
       </div>

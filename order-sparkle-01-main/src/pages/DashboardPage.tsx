@@ -4,30 +4,24 @@ import { useStore } from '@/store/posStore';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { salesAPI } from '@/lib/api';
-import { motion } from 'framer-motion';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
-import { ShoppingCart, BarChart3, Settings, PlusCircle, TrendingUp, DollarSign, Clock, Zap } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { ShoppingCart, BarChart3, Settings, PlusCircle, TrendingUp, DollarSign, Zap, LogOut, LayoutDashboard, ChevronRight, Activity } from 'lucide-react';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { restaurant, isAuthenticated } = useStore();
+  const { restaurant, isAuthenticated, logout } = useStore();
   const [dailySales, setDailySales] = useState<any>(null);
   const [weeklySales, setWeeklySales] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
-
     const fetchData = async () => {
       try {
         const [daily, weekly] = await Promise.all([
           salesAPI.getDailySales(new Date().toISOString()),
           salesAPI.getWeeklySales(),
         ]);
-
         setDailySales(daily.data);
         setWeeklySales(weekly.data);
       } catch (error) {
@@ -36,249 +30,254 @@ export default function Dashboard() {
         setLoading(false);
       }
     };
-
     fetchData();
   }, [isAuthenticated, navigate]);
 
   const stats = [
     {
-      title: 'Today\'s Sales',
+      title: 'Today\'s Revenue',
       value: `₹${dailySales?.dailyTotal || 0}`,
-      subtext: 'Total revenue',
+      trend: '+12.5%',
       icon: <DollarSign className="h-5 w-5" />,
-      color: 'from-blue-500 to-cyan-500',
+      color: 'bg-orange-500',
     },
     {
-      title: 'Orders',
+      title: 'Total Orders',
       value: dailySales?.orderCount || 0,
-      subtext: 'Orders placed',
+      trend: '+8.2%',
       icon: <ShoppingCart className="h-5 w-5" />,
-      color: 'from-purple-500 to-pink-500',
+      color: 'bg-blue-500',
     },
     {
-      title: 'Weekly Revenue',
+      title: 'Weekly Sales',
       value: `₹${weeklySales?.weeklyTotal || 0}`,
-      subtext: '7 days revenue',
+      trend: '+15.3%',
       icon: <TrendingUp className="h-5 w-5" />,
-      color: 'from-orange-500 to-red-500',
+      color: 'bg-purple-500',
     },
     {
-      title: 'Avg Order Value',
-      value: `₹${(dailySales?.dailyTotal || 0) / Math.max(dailySales?.orderCount || 1, 1)}`,
-      subtext: 'Per order',
-      icon: <Zap className="h-5 w-5" />,
-      color: 'from-green-500 to-emerald-500',
+      title: 'Active Tables',
+      value: '14/20',
+      trend: 'Peak',
+      icon: <Activity className="h-5 w-5" />,
+      color: 'bg-emerald-500',
     },
   ];
 
   const quickActions = [
     {
-      title: 'Start Billing',
-      description: 'Create new order',
-      icon: <ShoppingCart className="h-8 w-8" />,
-      onClick: () => navigate('/pos'),
-      color: 'from-blue-500 to-blue-600',
-      delay: 0,
+      title: 'POS Terminal',
+      desc: 'Launch billing interface',
+      icon: <Zap className="h-6 w-6" />,
+      path: '/pos',
+      color: 'text-orange-500 bg-orange-500/10',
     },
     {
-      title: 'Add Menu Items',
-      description: 'Manage your menu',
-      icon: <PlusCircle className="h-8 w-8" />,
-      onClick: () => navigate('/menu'),
-      color: 'from-purple-500 to-purple-600',
-      delay: 0.1,
+      title: 'Menu Manager',
+      desc: 'Update items & pricing',
+      icon: <PlusCircle className="h-6 w-6" />,
+      path: '/menu',
+      color: 'text-blue-500 bg-blue-500/10',
     },
     {
-      title: 'View Analytics',
-      description: 'Sales insights',
-      icon: <BarChart3 className="h-8 w-8" />,
-      onClick: () => navigate('/sales'),
-      color: 'from-pink-500 to-pink-600',
-      delay: 0.2,
+      title: 'Sales Reports',
+      desc: 'Deep dive into analytics',
+      icon: <BarChart3 className="h-6 w-6" />,
+      path: '/sales',
+      color: 'text-purple-500 bg-purple-500/10',
     },
     {
-      title: 'Settings',
-      description: 'Configure restaurant',
-      icon: <Settings className="h-8 w-8" />,
-      onClick: () => {},
-      color: 'from-green-500 to-green-600',
-      delay: 0.3,
+      title: 'Store Settings',
+      desc: 'Restaurant profile & staff',
+      icon: <Settings className="h-6 w-6" />,
+      path: '#',
+      color: 'text-slate-500 bg-slate-500/10',
     },
   ];
 
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Header Section */}
-      <motion.div
-        initial={{ opacity: 0, y: -30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="bg-gradient-to-r from-slate-800 to-slate-900 border-b border-slate-700 p-8 md:p-12"
-      >
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
-            Welcome, {restaurant?.restaurantName}!
-          </h1>
-          <p className="text-slate-400 text-lg">Manage your restaurant with powerful tools</p>
+    <div className="min-h-screen bg-[#fafaf9] dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 font-sans">
+      {/* Sidebar - Desktop Only */}
+      <aside className="fixed left-0 top-0 bottom-0 w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-50 hidden lg:flex flex-col p-8">
+        <div className="flex items-center gap-3 mb-12">
+          <div className="h-10 w-10 bg-orange-500 rounded-xl flex items-center justify-center">
+            <Zap className="h-6 w-6 text-white fill-white/20" />
+          </div>
+          <span className="text-2xl font-black tracking-tighter uppercase">OrderSparkle</span>
         </div>
-      </motion.div>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-8 py-12">
-        {/* Quick Actions Section - TOP */}
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.1 }}
-          className="mb-12"
+        <nav className="flex-1 space-y-2">
+          <button className="w-full flex items-center gap-4 px-4 py-3 bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 rounded-2xl font-bold transition-all">
+            <LayoutDashboard className="h-5 w-5" /> Dashboard
+          </button>
+          {quickActions.map((action, i) => (
+            <button 
+              key={i} 
+              onClick={() => action.path !== '#' && navigate(action.path)}
+              className="w-full flex items-center gap-4 px-4 py-3 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl font-semibold transition-all"
+            >
+              {action.icon} {action.title}
+            </button>
+          ))}
+        </nav>
+
+        <button 
+           onClick={handleLogout}
+           className="mt-auto flex items-center gap-4 px-4 py-4 text-slate-400 hover:text-red-500 font-bold transition-all"
         >
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-white mb-2">⚡ Quick Actions</h2>
-            <p className="text-slate-400">Access your most used features instantly</p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {quickActions.map((action, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: action.delay }}
-                whileHover={{ y: -8, transition: { duration: 0.2 } }}
-                className="cursor-pointer"
-                onClick={action.onClick}
-              >
-                <Card className={`bg-gradient-to-br ${action.color} text-white p-8 shadow-xl hover:shadow-2xl transition-all duration-300 border-0 rounded-2xl`}>
-                  <div className="flex flex-col items-center text-center">
-                    <div className="bg-white/20 rounded-full p-4 mb-4 backdrop-blur-sm">
-                      {action.icon}
-                    </div>
-                    <h3 className="text-xl font-bold mb-1">{action.title}</h3>
-                    <p className="text-white/80 text-sm">{action.description}</p>
-                  </div>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </motion.section>
+          <LogOut className="h-5 w-5" /> Sign Out
+        </button>
+      </aside>
 
-        {/* Dashboard Analytics Section - BOTTOM */}
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.2 }}
-        >
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-white mb-2">📊 Today's Performance</h2>
-            <p className="text-slate-400">Real-time sales and order metrics</p>
+      {/* Main Content Area */}
+      <main className="lg:ml-72 p-6 sm:p-10 lg:p-14">
+        {/* Header */}
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-12">
+          <div>
+            <h1 className="text-4xl font-black tracking-tight mb-2">
+              Hello, <span className="text-orange-500">{restaurant?.restaurantName}</span>! 👋
+            </h1>
+            <p className="text-slate-500 font-medium">Here's what's happening in your restaurant today.</p>
           </div>
-
-          {/* Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-            {stats.map((stat, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.3, delay: 0.3 + index * 0.1 }}
-                whileHover={{ scale: 1.05, transition: { duration: 0.2 } }}
-              >
-                <Card className={`bg-gradient-to-br ${stat.color} text-white p-6 shadow-xl border-0 rounded-2xl overflow-hidden relative group`}>
-                  {/* Background gradient effect */}
-                  <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                  
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-4">
-                      <p className="text-white/80 text-sm font-medium">{stat.title}</p>
-                      <div className="bg-white/20 rounded-full p-2.5 backdrop-blur-sm">
-                        {stat.icon}
-                      </div>
-                    </div>
-                    <p className="text-4xl font-bold mb-2">{stat.value}</p>
-                    <p className="text-white/60 text-xs">{stat.subtext}</p>
-                  </div>
-                </Card>
-              </motion.div>
-            ))}
+          <div className="flex items-center gap-4">
+             <div className="h-14 w-14 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-sm">
+               <Settings className="h-6 w-6 text-slate-400" />
+             </div>
+             <Button onClick={() => navigate('/pos')} className="pos-btn-primary h-14 px-8 shadow-orange-500/20">
+               Go to POS <ChevronRight className="h-5 w-5 ml-2" />
+             </Button>
           </div>
+        </header>
 
-          {/* Charts Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Sales Trend Chart */}
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">
+          {stats.map((stat, i) => (
             <motion.div
+              key={i}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.5 }}
-              className="lg:col-span-2"
+              transition={{ delay: i * 0.1 }}
             >
-              <Card className="bg-slate-800 border-slate-700 shadow-xl rounded-2xl p-8">
-                <div className="mb-6">
-                  <h3 className="text-xl font-bold text-white mb-1">Sales Trend</h3>
-                  <p className="text-slate-400 text-sm">Today's revenue progression</p>
+              <Card className="p-6 pos-card border-none bg-white dark:bg-slate-900">
+                <div className="flex justify-between items-start mb-4">
+                  <div className={`h-12 w-12 rounded-2xl ${stat.color} flex items-center justify-center text-white shadow-lg shadow-current/20`}>
+                    {stat.icon}
+                  </div>
+                  <span className="text-[10px] font-black px-2 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter">
+                    {stat.trend}
+                  </span>
                 </div>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={[{ name: 'Today', sales: dailySales?.dailyTotal || 0 }]}>
-                    <defs>
-                      <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                    <XAxis dataKey="name" stroke="rgba(255,255,255,0.5)" />
-                    <YAxis stroke="rgba(255,255,255,0.5)" />
-                    <Tooltip contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px' }} />
-                    <Line 
-                      type="monotone" 
-                      dataKey="sales" 
-                      stroke="#3b82f6" 
-                      strokeWidth={3}
-                      dot={{ fill: '#3b82f6', r: 6 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <h3 className="text-slate-500 text-sm font-bold uppercase tracking-widest mb-1">{stat.title}</h3>
+                <p className="text-3xl font-black tracking-tighter">{stat.value}</p>
               </Card>
             </motion.div>
+          ))}
+        </div>
 
-            {/* Payment Methods Chart */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.6 }}
-            >
-              <Card className="bg-slate-800 border-slate-700 shadow-xl rounded-2xl p-8">
-                <div className="mb-6">
-                  <h3 className="text-xl font-bold text-white mb-1">Payment Methods</h3>
-                  <p className="text-slate-400 text-sm">Revenue by payment type</p>
-                </div>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={[
-                        { name: 'UPI', value: dailySales?.paymentSummary?.upi || 0 },
-                        { name: 'Card', value: dailySales?.paymentSummary?.card || 0 },
-                        { name: 'Cash', value: dailySales?.paymentSummary?.cash || 0 },
-                      ]}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, value }) => value > 0 ? `${name}` : ''}
-                      outerRadius={90}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      <Cell fill="#3b82f6" />
-                      <Cell fill="#8b5cf6" />
-                      <Cell fill="#ef4444" />
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </Card>
-            </motion.div>
+        {/* Main Analytics Row */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+          {/* Sales Chart */}
+          <Card className="xl:col-span-2 p-8 pos-card border-none bg-white dark:bg-slate-900">
+            <div className="flex items-center justify-between mb-10">
+              <div>
+                <h3 className="text-xl font-black tracking-tight">Revenue Analytics</h3>
+                <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Weekly Progression</p>
+              </div>
+              <div className="flex gap-2">
+                <button className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold transition-all">Today</button>
+                <button className="px-4 py-2 bg-orange-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-orange-500/20">7 Days</button>
+              </div>
+            </div>
+            
+            <div className="h-[350px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={[
+                  { day: 'Mon', sales: 4000 },
+                  { day: 'Tue', sales: 3000 },
+                  { day: 'Wed', sales: 2000 },
+                  { day: 'Thu', sales: 2780 },
+                  { day: 'Fri', sales: 1890 },
+                  { day: 'Sat', sales: 2390 },
+                  { day: 'Sun', sales: 3490 },
+                ]}>
+                  <defs>
+                    <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f080" />
+                  <XAxis 
+                    dataKey="day" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 12, fontWeight: 700, fill: '#94a3b8' }} 
+                    dy={10}
+                  />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 12, fontWeight: 700, fill: '#94a3b8' }} 
+                  />
+                  <Tooltip 
+                    contentStyle={{ border: 'none', borderRadius: '16px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', padding: '12px' }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="sales" 
+                    stroke="#f97316" 
+                    strokeWidth={4} 
+                    fillOpacity={1} 
+                    fill="url(#colorSales)" 
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+
+          {/* Side Module: Quick Actions */}
+          <div className="space-y-6">
+            <Card className="p-8 pos-card border-none bg-orange-600 text-white relative overflow-hidden group">
+              <div className="relative z-10">
+                <h3 className="text-2xl font-black mb-4">Fast Billing</h3>
+                <p className="text-orange-100 text-sm font-medium mb-8 leading-relaxed">
+                  Ready to serve? Skip the noise and jump straight to the POS terminal.
+                </p>
+                <Button 
+                   onClick={() => navigate('/pos')}
+                   className="w-full h-14 bg-white text-orange-600 rounded-2xl font-black text-lg hover:scale-105 transition-transform"
+                >
+                  Start Billing <ChevronRight className="h-5 w-5 ml-2" />
+                </Button>
+              </div>
+              <div className="absolute -right-10 -bottom-10 h-40 w-40 bg-white/10 rounded-full blur-[40px] group-hover:bg-white/20 transition-all duration-700" />
+            </Card>
+
+            <Card className="p-8 pos-card border-none bg-white dark:bg-slate-900">
+               <h3 className="text-lg font-black tracking-tight mb-6">Recent Activities</h3>
+               <div className="space-y-6">
+                 {[1, 2, 3].map((_, i) => (
+                   <div key={i} className="flex gap-4 items-center">
+                     <div className="h-12 w-12 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+                       <ShoppingCart className="h-5 w-5 text-slate-400" />
+                     </div>
+                     <div className="flex-1 min-w-0">
+                       <p className="text-sm font-bold truncate">New Order #8821</p>
+                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">2 mins ago • ₹450</p>
+                     </div>
+                   </div>
+                 ))}
+               </div>
+               <Button variant="ghost" className="w-full mt-6 text-orange-500 font-black text-xs uppercase tracking-widest">View All Transaction History</Button>
+            </Card>
           </div>
-        </motion.section>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

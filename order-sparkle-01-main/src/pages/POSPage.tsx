@@ -5,47 +5,38 @@ import { menuAPI, orderAPI } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@/components/ui/use-toast';
-import { Minus, Plus, Trash2, ShoppingCart, Loader2, Zap } from 'lucide-react';
+import { Minus, Plus, Trash2, ShoppingCart, Loader2, Zap, ArrowLeft, CheckCircle2, Phone, User, CreditCard, Banknote, Wallet, QrCode } from 'lucide-react';
 import { MenuItem } from '@/store/posStore';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { getFoodImage } from '@/lib/imageHelper';
 
-const CATEGORIES = ['Appetizers', 'Main Course', 'Desserts', 'Beverages', 'Combos', 'Other'];
+const CATEGORIES = ['All', 'Pizza', 'Burger', 'Beverages', 'Desserts', 'South Indian', 'Main Course', 'Appetizers', 'Fresh Juice', 'Combos', 'Other'];
 
 export default function POSPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { isAuthenticated, cart, addToCart, removeFromCart, updateQuantity, clearCart, discount, setDiscount, getSubtotal, getTax, getTotal } = useStore();
+  const { 
+    isAuthenticated, cart, addToCart, removeFromCart, updateQuantity, 
+    clearCart, discount, setDiscount, getSubtotal, getTax, getTotal 
+  } = useStore();
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card' | 'cash' | 'wallet'>('cash');
   const [showPayment, setShowPayment] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [completedOrder, setCompletedOrder] = useState<any>(null);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
-
     const fetchMenu = async () => {
       try {
         const response = await menuAPI.getItems();
         setMenuItems(response.data);
-        if (response.data.length > 0) {
-          setSelectedCategory(response.data[0].category);
-        }
       } catch (error) {
         toast({
           title: 'Error',
@@ -56,41 +47,23 @@ export default function POSPage() {
         setLoading(false);
       }
     };
-
     fetchMenu();
-  }, [isAuthenticated, navigate, toast]);
+  }, [toast]);
 
-  const filteredItems = selectedCategory
-    ? menuItems.filter((item) => item.category === selectedCategory)
-    : menuItems;
+  const filteredItems = selectedCategory === 'All'
+    ? menuItems
+    : menuItems.filter((item) => item.category === selectedCategory);
 
   const handleCheckout = async () => {
     if (!customerPhone) {
-      toast({
-        title: 'Error',
-        description: 'Please enter customer phone number',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (cart.length === 0) {
-      toast({
-        title: 'Error',
-        description: 'Cart is empty',
-        variant: 'destructive',
-      });
+      toast({ title: 'Phone Required', description: 'Please enter customer phone number', variant: 'destructive' });
       return;
     }
 
     setProcessingPayment(true);
-
     try {
       const orderData = {
-        items: cart.map((item) => ({
-          menuItemId: item._id,
-          quantity: item.quantity,
-        })),
+        items: cart.map((item) => ({ menuItemId: item._id, quantity: item.quantity })),
         customerPhone,
         customerName: customerName || 'Guest',
         paymentMethod,
@@ -101,344 +74,379 @@ export default function POSPage() {
       const order = response.data.order;
 
       if (paymentMethod === 'upi') {
-        // Handle Razorpay payment
+        // Handle Razorpay (Mock logic or actual integration)
         const options = {
           key: response.data.razorpayKeyId,
           order_id: response.data.razorpayOrderId,
           amount: order.totalAmount * 100,
           currency: 'INR',
-          name: 'OrderSparkle',
-          description: `Order ${order.orderId}`,
-          prefill: {
-            contact: customerPhone,
-            name: customerName,
-          },
-          handler: async (response: any) => {
-            try {
-              await orderAPI.verifyPayment({
-                orderId: order.orderId,
-                razorpayPaymentId: response.razorpay_payment_id,
-                razorpaySignature: response.razorpay_signature,
-              });
-
-              toast({
-                title: 'Success',
-                description: `Order ${order.orderId} confirmed!`,
-              });
-
-              clearCart();
-              setCustomerPhone('');
-              setCustomerName('');
-              setShowPayment(false);
-            } catch (error) {
-              toast({
-                title: 'Error',
-                description: 'Payment verification failed',
-                variant: 'destructive',
-              });
-            }
+          name: 'Fast Billing',
+          handler: async (res: any) => {
+            await orderAPI.verifyPayment({
+              orderId: order.orderId,
+              razorpayPaymentId: res.razorpay_payment_id,
+              razorpaySignature: res.razorpay_signature,
+            });
+            finalizeOrder(order);
           },
         };
-
         // @ts-ignore
-        if (window.Razorpay) {
-          // @ts-ignore
-          const rzp = new window.Razorpay(options);
-          rzp.open();
-        }
+        const rzp = new window.Razorpay(options);
+        rzp.open();
       } else {
-        // Cash or Card - mark as paid
         await orderAPI.markAsPaid(order.orderId);
-
-        toast({
-          title: 'Success',
-          description: `Order ${order.orderId} created!`,
-        });
-
-        clearCart();
-        setCustomerPhone('');
-        setCustomerName('');
-        setShowPayment(false);
+        finalizeOrder(order);
       }
     } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.response?.data?.error || 'Failed to create order',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: error.response?.data?.error || 'Failed to create order', variant: 'destructive' });
     } finally {
       setProcessingPayment(false);
     }
   };
 
+  const finalizeOrder = (order: any) => {
+    setCompletedOrder({ order, items: [...cart], customerPhone, total: order.totalAmount, customerName });
+    setShowSuccessModal(true);
+    setShowPayment(false);
+  };
+
+  const sendWhatsAppBill = () => {
+    if (!completedOrder) return;
+    const { order, items, customerPhone, total } = completedOrder;
+    let text = `*✨ Fast Billing Receipt ✨*\n\nOrder ID: #${order.orderId}\n`;
+    items.forEach((item: any) => {
+      text += `• ${item.quantity}x ${item.name} - ₹${(item.finalPrice * item.quantity).toFixed(2)}\n`;
+    });
+    text += `\n*Total Paid: ₹${total.toFixed(2)}*\n\nThank you for your visit! 🍽️`;
+    window.open(`https://wa.me/${customerPhone}?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const handleNewOrder = () => {
+    clearCart();
+    setCustomerPhone('');
+    setCustomerName('');
+    setDiscount(0);
+    setShowSuccessModal(false);
+    setCompletedOrder(null);
+  };
+
   return (
-    <div className="p-6 bg-gradient-to-br from-slate-50 to-slate-100 min-h-screen">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Menu Section */}
-        <div className="lg:col-span-2">
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <Card className="p-6 shadow-lg mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h1 className="text-3xl font-bold text-gray-900">POS System</h1>
-                <Zap className="h-8 w-8 text-yellow-500" />
-              </div>
-
-              {/* Category Filter */}
-              <div className="mb-6">
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORIES.map((category) => (
-                      <SelectItem key={category} value={category}>
-                        {category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Menu Items Grid */}
-              {loading ? (
-                <div className="flex items-center justify-center h-96">
-                  <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {filteredItems.map((item) => (
-                    <motion.div
-                      key={item._id}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      <Card className="p-4 hover:shadow-lg transition-all cursor-pointer border-2 border-gray-200 hover:border-blue-500">
-                        {item.image && (
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            className="w-full h-32 object-cover rounded-lg mb-3"
-                          />
-                        )}
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900">{item.name}</h3>
-                            <p className="text-sm text-gray-600 mt-1">{item.description}</p>
-                          </div>
-                          {item.discountPercentage! > 0 && (
-                            <span className="bg-red-500 text-white text-xs px-2 py-1 rounded">
-                              -{item.discountPercentage!}%
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm text-gray-600 line-through">₹{item.price}</p>
-                            <p className="text-xl font-bold text-blue-600">₹{item.finalPrice}</p>
-                          </div>
-                          <Button
-                            onClick={() => addToCart(item)}
-                            className="bg-blue-500 hover:bg-blue-600"
-                          >
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </Card>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          </motion.div>
+    <div className="min-h-screen bg-[#fafaf9] dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 flex flex-col font-sans">
+      {/* Premium Header */}
+      <header className="h-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 px-6 sm:px-10 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" onClick={() => navigate('/dashboard')} className="rounded-full h-10 w-10 p-0">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">Fast Billing</h1>
+            <p className="text-xs text-slate-500 font-medium">Counter #01 • Admin Mode</p>
+          </div>
         </div>
+        <div className="flex items-center gap-6">
+          <div className="hidden sm:flex flex-col items-end">
+            <span className="text-sm font-bold text-orange-500">Live Status</span>
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Synchronized</span>
+          </div>
+          <div className="h-10 w-10 rounded-2xl bg-orange-500/10 flex items-center justify-center">
+            <Zap className="h-5 w-5 text-orange-500 fill-orange-500/20" />
+          </div>
+        </div>
+      </header>
 
-        {/* Cart Section */}
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          <Card className="p-6 shadow-lg sticky top-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold text-gray-900">Order Summary</h2>
-              <ShoppingCart className="h-6 w-6 text-blue-500" />
+      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden max-h-[calc(100-5rem)]">
+        {/* Left: Menu Side */}
+        <section className="flex-1 flex flex-col p-6 sm:p-8 overflow-y-auto scrollbar-thin">
+          {/* Categories */}
+          <div className="flex gap-3 overflow-x-auto pb-6 no-scrollbar">
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`category-chip ${selectedCategory === cat ? 'category-chip-active' : 'category-chip-inactive'}`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {loading ? (
+            <div className="flex-1 flex flex-col items-center justify-center opacity-50">
+              <Loader2 className="h-12 w-12 animate-spin text-orange-500 mb-4" />
+              <p className="font-bold text-slate-400">Loading your menu...</p>
             </div>
-
-            {/* Cart Items */}
-            {cart.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <p>Cart is empty</p>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
-                  {cart.map((item) => (
-                    <div key={item._id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-900">{item.name}</p>
-                        <p className="text-sm text-gray-600">₹{item.finalPrice}</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <AnimatePresence mode="popLayout">
+                {filteredItems.map((item, index) => (
+                  <motion.div
+                    key={item._id || `item-${index}`}
+                    layout
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    whileHover={{ y: -6, transition: { duration: 0.2 } }}
+                    onClick={() => addToCart(item)}
+                    className="group cursor-pointer overflow-hidden rounded-[2.5rem] bg-white dark:bg-slate-900 border-none shadow-sm hover:shadow-2xl transition-all duration-500 ring-1 ring-slate-100 dark:ring-slate-800"
+                  >
+                    <div className="relative aspect-square overflow-hidden">
+                      <img 
+                        src={getFoodImage(item.name, item.category)} 
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
+                        alt={item.name}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {item.discountPercentage! > 0 && (
+                        <div className="absolute top-3 right-3 bg-red-500 text-white text-[10px] font-black px-2 py-1 rounded-full uppercase tracking-tighter shadow-lg">
+                          -{item.discountPercentage}% OFF
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4">
+                      <div className="flex justify-between items-start mb-1">
+                        <h3 className="font-bold text-lg leading-tight">{item.name}</h3>
+                      </div>
+                      <p className="text-xs text-slate-500 line-clamp-2 mb-4 leading-relaxed">{item.description}</p>
+                      <div className="text-right">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest line-through">₹{item.price}</p>
+                        <p className="text-xl font-black text-orange-600">₹{item.finalPrice}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => updateQuantity(item._id!, item.quantity - 1)}
-                        >
-                          <Minus className="h-3 w-3" />
-                        </Button>
-                        <span className="w-8 text-center font-semibold">{item.quantity}</span>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => updateQuantity(item._id!, item.quantity + 1)}
-                        >
-                          <Plus className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => removeFromCart(item._id!)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Popular Choice</span>
+                        <div className="flex-1 h-[1px] bg-slate-100 dark:bg-slate-800" />
+                        <div className="h-7 w-7 rounded-lg bg-orange-500 text-white flex items-center justify-center shadow-lg shadow-orange-500/20 active:scale-90 transition-transform">
+                          <Plus className="h-4 w-4" />
+                        </div>
                       </div>
                     </div>
-                  ))}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </section>
+
+        {/* Right: Cart Side */}
+        <aside className="w-full lg:w-[420px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col shadow-2xl z-10 lg:sticky lg:top-20 lg:h-[calc(100vh-5rem)]">
+          <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <h2 className="text-xl font-black uppercase tracking-tight flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5 text-orange-500" /> Current Order
+            </h2>
+            <span className="bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full text-xs font-bold">{cart.length} Items</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {cart.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center opacity-30">
+                <div className="h-20 w-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                  <ShoppingCart className="h-8 w-8" />
                 </div>
-
-                {/* Discount */}
-                <div className="border-t pt-4 mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Discount (₹)
-                  </label>
-                  <Input
-                    type="number"
-                    value={discount}
-                    onChange={(e) => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
-                    className="border-gray-300"
-                  />
-                </div>
-
-                {/* Totals */}
-                <div className="border-t pt-4 space-y-2 mb-6 bg-gradient-to-br from-blue-50 to-purple-50 p-4 rounded-lg">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Subtotal:</span>
-                    <span className="font-semibold">₹{getSubtotal().toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Tax (5%):</span>
-                    <span className="font-semibold">₹{getTax().toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Discount:</span>
-                    <span className="font-semibold">-₹{discount.toFixed(2)}</span>
-                  </div>
-                  <div className="border-t pt-2 flex justify-between text-lg font-bold text-blue-600">
-                    <span>Total:</span>
-                    <span>₹{getTotal().toFixed(2)}</span>
-                  </div>
-                </div>
-
-                {/* Payment Button */}
-                <Button
-                  onClick={() => setShowPayment(true)}
-                  className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white py-6 text-lg"
-                >
-                  Proceed to Payment
-                </Button>
-              </>
-            )}
-
-            {/* Clear Cart */}
-            {cart.length > 0 && (
-              <Button
-                onClick={clearCart}
-                variant="outline"
-                className="w-full mt-2"
-              >
-                Clear Cart
-              </Button>
-            )}
-          </Card>
-        </motion.div>
-      </div>
-
-      {/* Payment Modal */}
-      {showPayment && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3 }}
-          >
-            <Card className="w-full max-w-md p-6">
-              <h2 className="text-2xl font-bold mb-4">Complete Payment</h2>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Customer Name</label>
-                  <Input
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Optional"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Phone Number *</label>
-                  <Input
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    placeholder="+91 9876543210"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Payment Method</label>
-                  <Select value={paymentMethod} onValueChange={(value: any) => setPaymentMethod(value)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="card">Card</SelectItem>
-                      <SelectItem value="upi">UPI (Razorpay)</SelectItem>
-                      <SelectItem value="wallet">Wallet</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <p className="text-sm text-gray-600">Total Amount</p>
-                  <p className="text-3xl font-bold text-blue-600">₹{getTotal().toFixed(2)}</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    onClick={() => setShowPayment(false)}
-                    variant="outline"
+                <p className="font-bold">Cart is empty</p>
+                <p className="text-xs mt-1">Add items to start billing</p>
+              </div>
+            ) : (
+              <AnimatePresence>
+                {cart.map((item) => (
+                  <motion.div
+                    key={item._id}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="flex gap-4 items-center group"
                   >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleCheckout}
+                    <div className="h-16 w-16 rounded-xl overflow-hidden shadow-md flex-shrink-0">
+                      <img src={item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c'} className="h-full w-full object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start">
+                        <h4 className="font-bold text-sm truncate pr-2">{item.name}</h4>
+                        <button onClick={() => removeFromCart(item._id!)} className="text-slate-300 hover:text-red-500 transition-colors">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between mt-2">
+                        <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                          <button onClick={() => updateQuantity(item._id!, item.quantity - 1)} className="h-6 w-6 rounded-md hover:bg-white dark:hover:bg-slate-700 shadow-sm flex items-center justify-center transition-all"><Minus className="h-3 w-3" /></button>
+                          <span className="text-xs font-black min-w-[20px] text-center">{item.quantity}</span>
+                          <button onClick={() => updateQuantity(item._id!, item.quantity + 1)} className="h-6 w-6 rounded-md hover:bg-white dark:hover:bg-slate-700 shadow-sm flex items-center justify-center transition-all"><Plus className="h-3 w-3" /></button>
+                        </div>
+                        <span className="font-bold text-sm">₹{(item.finalPrice * item.quantity).toFixed(0)}</span>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            )}
+          </div>
+
+          {/* Pricing Summary */}
+          <div className="p-6 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between text-slate-500 font-medium">
+                <span>Subtotal</span>
+                <span>₹{getSubtotal().toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-slate-500 font-medium">
+                <span>Tax (5.0%)</span>
+                <span>₹{getTax().toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Add Discount</span>
+                <input 
+                  type="number" 
+                  value={discount || ''} 
+                  placeholder="₹0"
+                  onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                  className="w-20 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-right font-black text-orange-600 focus:ring-1 focus:ring-orange-500 outline-none"
+                />
+              </div>
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-between items-end">
+                <span className="text-lg font-black uppercase tracking-tight">Total Amount</span>
+                <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">₹{getTotal().toFixed(0)}</span>
+              </div>
+            </div>
+
+            <Button
+              disabled={cart.length === 0}
+              onClick={() => setShowPayment(true)}
+              className="pos-btn-primary w-full h-16 text-lg flex items-center justify-center gap-3 shadow-orange-500/20"
+            >
+              Checkout Now <Zap className="h-5 w-5 fill-current" />
+            </Button>
+            <Button variant="ghost" className="w-full text-slate-400 hover:text-red-500" onClick={clearCart}>Cancel Order</Button>
+          </div>
+        </aside>
+      </main>
+
+      {/* Modern Payment Drawer/Modal */}
+      <AnimatePresence>
+        {showPayment && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center sm:justify-end">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              onClick={() => setShowPayment(false)}
+              className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" 
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="relative w-full max-w-lg h-full bg-white dark:bg-slate-950 shadow-2xl p-8 sm:p-12 overflow-y-auto"
+            >
+              <h2 className="text-3xl font-black mb-2 tracking-tight">Payment Details</h2>
+              <p className="text-slate-500 mb-10 font-medium">Almost there! Finalize your customer's order.</p>
+
+              <div className="space-y-8">
+                {/* Inputs */}
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                      <User className="h-3 w-3" /> Customer Name
+                    </label>
+                    <input 
+                      value={customerName} 
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="e.g. Rahul Sharma"
+                      className="input-premium w-full px-5 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                      <Phone className="h-3 w-3 text-orange-500" /> WhatsApp Number *
+                    </label>
+                    <input 
+                      value={customerPhone} 
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="9XXXXXXXXX"
+                      className="input-premium w-full px-5 outline-none border-orange-500/30 bg-orange-50/10"
+                    />
+                  </div>
+                </div>
+
+                {/* Payment Methods */}
+                <div className="space-y-4">
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-400">Payment Channel</label>
+                  <div className="grid grid-cols-2 gap-4">
+                    {[
+                      { id: 'cash', icon: <Banknote className="h-5 w-5" />, label: 'Cash' },
+                      { id: 'card', icon: <CreditCard className="h-5 w-5" />, label: 'Card' },
+                      { id: 'upi', icon: <QrCode className="h-5 w-5" />, label: 'UPI' },
+                      { id: 'wallet', icon: <Wallet className="h-5 w-5" />, label: 'Wallet' },
+                    ].map((method) => (
+                      <button
+                        key={method.id}
+                        onClick={() => setPaymentMethod(method.id as any)}
+                        className={`h-20 rounded-2xl border-2 flex flex-col items-center justify-center gap-2 transition-all duration-300 ${
+                          paymentMethod === method.id 
+                            ? 'border-orange-500 bg-orange-50/20 text-orange-600 shadow-lg shadow-orange-500/10' 
+                            : 'border-slate-100 dark:border-slate-800 hover:border-slate-300'
+                        }`}
+                      >
+                        {method.icon}
+                        <span className="text-xs font-bold">{method.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-8 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-4">
+                  <div className="flex justify-between items-baseline">
+                    <span className="font-bold">Total Payable</span>
+                    <span className="text-5xl font-black tracking-tighter">₹{getTotal().toFixed(0)}</span>
+                  </div>
+                  <Button 
+                    onClick={handleCheckout} 
                     disabled={processingPayment}
-                    className="bg-blue-500 hover:bg-blue-600"
+                    className="pos-btn-primary h-16 text-xl shadow-orange-500/30"
                   >
-                    {processingPayment && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {processingPayment ? 'Processing...' : 'Confirm Order'}
+                    {processingPayment ? <Loader2 className="animate-spin" /> : 'Confirm Order'}
                   </Button>
+                  <Button variant="ghost" onClick={() => setShowPayment(false)} className="text-slate-400">Go Back</Button>
                 </div>
               </div>
-            </Card>
-          </motion.div>
-        </div>
-      )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Success Animation Modal */}
+      <AnimatePresence>
+        {showSuccessModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[40px] p-10 text-center shadow-2xl"
+            >
+              <div className="h-24 w-24 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-8 shadow-2xl shadow-green-500/40">
+                <CheckCircle2 className="h-12 w-12 text-white" />
+              </div>
+              <h2 className="text-3xl font-black mb-4 tracking-tighter">Transaction Success!</h2>
+              <p className="text-slate-500 font-medium mb-10 leading-relaxed">
+                Order <span className="text-slate-900 dark:text-white font-black">#{completedOrder?.order.orderId}</span> has been processed successfully.
+              </p>
+
+              <div className="space-y-4">
+                <Button 
+                  onClick={sendWhatsAppBill} 
+                  className="w-full h-14 bg-[#25D366] hover:bg-[#1fb355] text-white rounded-2xl flex items-center justify-center gap-3 text-lg font-bold shadow-xl shadow-green-500/10"
+                >
+                  <QrCode className="h-5 w-5" /> WhatsApp Digital Bill
+                </Button>
+                <Button 
+                   onClick={handleNewOrder}
+                   className="w-full h-14 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-bold text-lg"
+                >
+                  Start Next Order
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -26,7 +26,7 @@ app.use(
   })
 );
 
-// Connect to MongoDB
+// Connect to PostgreSQL via Prisma
 connectDB();
 
 // API Routes

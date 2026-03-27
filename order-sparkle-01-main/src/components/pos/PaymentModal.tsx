@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { X, CreditCard, Smartphone, Banknote, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { usePOSStore } from '@/store/posStore';
-import type { PaymentMethod } from '@/store/posStore';
+import { useStore } from '@/store/posStore';
+
+type PaymentMethod = 'upi' | 'card' | 'cash' | 'wallet';
 
 interface PaymentModalProps {
   open: boolean;
@@ -16,8 +17,8 @@ const paymentMethods: { id: PaymentMethod; label: string; icon: React.ReactNode 
 ];
 
 const PaymentModal = ({ open, onClose }: PaymentModalProps) => {
-  const { getTotal, clearOrder, orderId } = usePOSStore();
-  const [selected, setSelected] = useState<PaymentMethod | null>(null);
+  const { getTotal, clearCart } = useStore();
+  const [selected, setSelected] = useState<any | null>(null);
   const [paid, setPaid] = useState(false);
   const total = getTotal();
 
@@ -25,7 +26,7 @@ const PaymentModal = ({ open, onClose }: PaymentModalProps) => {
     if (!selected) return;
     setPaid(true);
     setTimeout(() => {
-      clearOrder();
+      clearCart();
       setPaid(false);
       setSelected(null);
       onClose();
@@ -70,7 +71,7 @@ const PaymentModal = ({ open, onClose }: PaymentModalProps) => {
                   <CheckCircle2 size={64} className="text-pos-success" />
                 </motion.div>
                 <h3 className="font-display text-2xl font-bold text-foreground">Payment Successful!</h3>
-                <p className="text-muted-foreground text-sm">Order {orderId} has been paid</p>
+                <p className="text-muted-foreground text-sm">Order has been processed</p>
               </motion.div>
             ) : (
               <>
@@ -83,7 +84,7 @@ const PaymentModal = ({ open, onClose }: PaymentModalProps) => {
 
                 <div className="text-center mb-6">
                   <p className="text-sm text-muted-foreground">Total Amount</p>
-                  <p className="font-display text-4xl font-bold text-primary">${total.toFixed(2)}</p>
+                  <p className="font-display text-4xl font-bold text-primary">₹{total.toFixed(2)}</p>
                 </div>
 
                 <div className="space-y-3 mb-6">

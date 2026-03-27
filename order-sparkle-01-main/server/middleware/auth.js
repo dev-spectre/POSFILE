@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import Restaurant from '../models/Restaurant.js';
+import { prisma } from '../config/database.js';
 
 export const authMiddleware = async (req, res, next) => {
   try {
@@ -10,7 +10,7 @@ export const authMiddleware = async (req, res, next) => {
       // Use demo mode with a fake restaurant ID
       req.restaurantId = 'demo-restaurant-id';
       req.restaurant = {
-        _id: 'demo-restaurant-id',
+        id: 'demo-restaurant-id',
         restaurantName: 'Demo Restaurant',
         adminUsername: 'demo',
         adminEmail: 'demo@restaurant.com',
@@ -22,7 +22,7 @@ export const authMiddleware = async (req, res, next) => {
     if (token === 'demo-token-no-auth') {
       req.restaurantId = 'demo-restaurant-id';
       req.restaurant = {
-        _id: 'demo-restaurant-id',
+        id: 'demo-restaurant-id',
         restaurantName: 'Demo Restaurant',
         adminUsername: 'demo',
         adminEmail: 'demo@restaurant.com',
@@ -32,7 +32,9 @@ export const authMiddleware = async (req, res, next) => {
 
     // Verify real JWT tokens
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    const restaurant = await Restaurant.findById(decoded.restaurantId);
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: decoded.restaurantId },
+    });
 
     if (!restaurant) {
       return res.status(401).json({ error: 'Restaurant not found' });

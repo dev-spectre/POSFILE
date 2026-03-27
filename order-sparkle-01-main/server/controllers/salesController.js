@@ -1,5 +1,4 @@
-import Sales from '../models/Sales.js';
-import Order from '../models/Order.js';
+import { prisma } from '../config/database.js';
 
 export const getDailySales = async (req, res) => {
   try {
@@ -8,9 +7,11 @@ export const getDailySales = async (req, res) => {
     const queryDate = date ? new Date(date) : new Date();
     queryDate.setHours(0, 0, 0, 0);
 
-    const sales = await Sales.findOne({
-      restaurantId: req.restaurantId,
-      date: queryDate,
+    const sales = await prisma.sale.findFirst({
+      where: {
+        restaurantId: req.restaurantId,
+        date: queryDate,
+      },
     });
 
     if (!sales) {
@@ -37,10 +38,12 @@ export const getWeeklySales = async (req, res) => {
     const startDate = new Date(endDate);
     startDate.setDate(startDate.getDate() - 7);
 
-    const orders = await Order.find({
-      restaurantId: req.restaurantId,
-      paymentStatus: 'paid',
-      createdAt: { $gte: startDate, $lte: endDate },
+    const orders = await prisma.order.findMany({
+      where: {
+        restaurantId: req.restaurantId,
+        paymentStatus: 'paid',
+        createdAt: { gte: startDate, lte: endDate },
+      },
     });
 
     let weeklyTotal = 0;
@@ -78,10 +81,12 @@ export const getMonthlySales = async (req, res) => {
     const endDate = new Date(queryYear, queryMonth + 1, 0);
     endDate.setHours(23, 59, 59, 999);
 
-    const orders = await Order.find({
-      restaurantId: req.restaurantId,
-      paymentStatus: 'paid',
-      createdAt: { $gte: startDate, $lte: endDate },
+    const orders = await prisma.order.findMany({
+      where: {
+        restaurantId: req.restaurantId,
+        paymentStatus: 'paid',
+        createdAt: { gte: startDate, lte: endDate },
+      },
     });
 
     let monthlyTotal = 0;
@@ -122,21 +127,30 @@ export const getTopSellingItems = async (req, res) => {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(days));
 
-    const orders = await Order.find({
-      restaurantId: req.restaurantId,
-      paymentStatus: 'paid',
-      createdAt: { $gte: startDate },
-    }).populate('items.menuItemId');
+    const orders = await prisma.order.findMany({
+      where: {
+        restaurantId: req.restaurantId,
+        paymentStatus: 'paid',
+        createdAt: { gte: startDate },
+      },
+      include: {
+        items: {
+          include: {
+            menuItem: true
+          }
+        }
+      }
+    });
 
     const itemStats = {};
 
     orders.forEach((order) => {
       order.items.forEach((item) => {
-        const itemId = item.menuItemId._id.toString();
+        const itemId = item.menuItemId;
         if (!itemStats[itemId]) {
           itemStats[itemId] = {
-            menuItemId: item.menuItemId._id,
-            name: item.menuItemId.name,
+            menuItemId: item.menuItemId,
+            name: item.name,
             quantity: 0,
             revenue: 0,
           };
@@ -163,17 +177,26 @@ export const getCategorySales = async (req, res) => {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(days));
 
-    const orders = await Order.find({
-      restaurantId: req.restaurantId,
-      paymentStatus: 'paid',
-      createdAt: { $gte: startDate },
-    }).populate('items.menuItemId');
+    const orders = await prisma.order.findMany({
+      where: {
+        restaurantId: req.restaurantId,
+        paymentStatus: 'paid',
+        createdAt: { gte: startDate },
+      },
+      include: {
+        items: {
+          include: {
+            menuItem: true
+          }
+        }
+      }
+    });
 
     const categoryStats = {};
 
     orders.forEach((order) => {
       order.items.forEach((item) => {
-        const category = item.menuItemId.category;
+        const category = item.menuItem.category;
         if (!categoryStats[category]) {
           categoryStats[category] = {
             category,

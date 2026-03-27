@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
-import Restaurant from '../models/Restaurant.js';
+import bcrypt from 'bcryptjs';
+import { prisma } from '../config/database.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -24,65 +25,70 @@ export const register = async (req, res) => {
     }
 
     // Check if restaurant or admin already exists
-    const existingRestaurant = await Restaurant.findOne({
-      $or: [{ restaurantName }, { adminUsername }, { adminEmail }],
+    const existingRestaurant = await prisma.restaurant.findFirst({
+      where: {
+        OR: [
+          { restaurantName },
+          { adminUsername },
+          { adminEmail }
+        ]
+      },
     });
 
     if (existingRestaurant) {
       return res.status(400).json({ error: 'Restaurant name, username, or email already exists' });
     }
 
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
     // Create new restaurant
-    const restaurant = new Restaurant({
-      restaurantName,
-      adminUsername,
-      adminEmail,
-      password,
-      phoneNumber,
-      address,
+    const restaurant = await prisma.restaurant.create({
+      data: {
+        restaurantName,
+        adminUsername,
+        adminEmail,
+        password: hashedPassword,
+        phoneNumber,
+        address,
+      },
     });
 
-    await restaurant.save();
-
     // Generate JWT token
-    const token = jwt.sign({ restaurantId: restaurant._id }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ restaurantId: restaurant.id }, JWT_SECRET, { expiresIn: '7d' });
+
+    // Remove password from response
+    const { password: _, ...restaurantData } = restaurant;
 
     res.status(201).json({
       message: 'Restaurant registered successfully',
       token,
-      restaurant: restaurant.toJSON(),
+      restaurant: restaurantData,
     });
   } catch (error) {
     console.error('Registration error:', error);
-    
-    // Handle MongoDB connection errors
-    if (error.message.includes('ECONNREFUSED') || error.message.includes('connect ECONNREFUSED')) {
-      return res.status(503).json({ 
-        error: 'Database connection failed. Please ensure MongoDB is running or check your MONGODB_URI' 
-      });
-    }
-    
-    // Handle validation errors
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({ error: messages.join(', ') });
-    }
-
     res.status(500).json({ error: error.message || 'Registration failed' });
   }
 };
 
 export const login = async (req, res) => {
   try {
-    const { restaurantName, adminUsername, password } = req.body;
+    const { email, restaurantName, adminUsername, password } = req.body;
 
-    if (!password || (!restaurantName && !adminUsername)) {
-      return res.status(400).json({ error: 'Username/Restaurant name and password are required' });
+    if (!password || (!email && !restaurantName && !adminUsername)) {
+      return res.status(400).json({ error: 'Email/Username/Restaurant name and password are required' });
     }
 
-    // Find restaurant by name or username
-    const restaurant = await Restaurant.findOne({
-      $or: [{ restaurantName }, { adminUsername }],
+    // Find restaurant by email, name or username
+    const restaurant = await prisma.restaurant.findFirst({
+      where: {
+        OR: [
+          { adminEmail: email || '' },
+          { restaurantName: restaurantName || '' },
+          { adminUsername: adminUsername || '' }
+        ]
+      },
     });
 
     if (!restaurant) {
@@ -90,20 +96,47 @@ export const login = async (req, res) => {
     }
 
     // Check password
-    const isPasswordValid = await restaurant.comparePassword(password);
+    const isPasswordValid = await bcrypt.compare(password, restaurant.password);
 
     if (!isPasswordValid) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     // Generate JWT token
-    const token = jwt.sign({ restaurantId: restaurant._id }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ restaurantId: restaurant.id }, JWT_SECRET, { expiresIn: '7d' });
+
+    // Remove password from response
+    const { password: _, ...restaurantData } = restaurant;
 
     res.status(200).json({
       message: 'Login successful',
       token,
-      restaurant: restaurant.toJSON(),
+      restaurant: restaurantData,
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    // This is a stub. In a real app, you'd send a reset token via email.
+    // For now, we'll just return a success message if the user exists.
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { adminEmail: email }
+    });
+
+    if (!restaurant) {
+      // Don't reveal if user exists for security, but for demo we can be more helpful
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.status(200).json({ message: 'Password reset link sent to your email' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -111,13 +144,16 @@ export const login = async (req, res) => {
 
 export const getProfile = async (req, res) => {
   try {
-    const restaurant = await Restaurant.findById(req.restaurantId);
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: req.restaurantId },
+    });
 
     if (!restaurant) {
       return res.status(404).json({ error: 'Restaurant not found' });
     }
 
-    res.status(200).json(restaurant.toJSON());
+    const { password: _, ...restaurantData } = restaurant;
+    res.status(200).json(restaurantData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -127,9 +163,9 @@ export const updateProfile = async (req, res) => {
   try {
     const { restaurantName, phoneNumber, address, city, state, zipCode, cuisineType } = req.body;
 
-    const restaurant = await Restaurant.findByIdAndUpdate(
-      req.restaurantId,
-      {
+    const restaurant = await prisma.restaurant.update({
+      where: { id: req.restaurantId },
+      data: {
         restaurantName,
         phoneNumber,
         address,
@@ -138,12 +174,12 @@ export const updateProfile = async (req, res) => {
         zipCode,
         cuisineType,
       },
-      { new: true, runValidators: true }
-    );
+    });
 
+    const { password: _, ...restaurantData } = restaurant;
     res.status(200).json({
       message: 'Profile updated successfully',
-      restaurant: restaurant.toJSON(),
+      restaurant: restaurantData,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

@@ -1,6 +1,4 @@
-import Order from '../models/Order.js';
-import MenuItem from '../models/MenuItem.js';
-import Sales from '../models/Sales.js';
+import { prisma } from '../config/database.js';
 import Razorpay from 'razorpay';
 
 // Initialize Razorpay only if credentials are available
@@ -12,6 +10,13 @@ if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
   });
 }
 
+const generateOrderId = () => {
+  const date = new Date();
+  const timestamp = date.getTime();
+  const random = Math.floor(Math.random() * 10000);
+  return `ORD-${timestamp}-${random}`;
+};
+
 export const createOrder = async (req, res) => {
   try {
     const { items, customerPhone, customerName, paymentMethod, discount, notes } = req.body;
@@ -21,21 +26,23 @@ export const createOrder = async (req, res) => {
     }
 
     let subtotal = 0;
-    let orderItems = [];
+    const orderItemsFinal = [];
 
     // Validate items and calculate total
     for (const item of items) {
-      const menuItem = await MenuItem.findById(item.menuItemId);
+      const menuItem = await prisma.menuItem.findUnique({
+        where: { id: item.menuItemId }
+      });
 
-      if (!menuItem || menuItem.restaurantId.toString() !== req.restaurantId.toString()) {
+      if (!menuItem || menuItem.restaurantId !== req.restaurantId) {
         return res.status(400).json({ error: `Invalid menu item: ${item.menuItemId}` });
       }
 
       const itemTotal = menuItem.finalPrice * item.quantity;
       subtotal += itemTotal;
 
-      orderItems.push({
-        menuItemId: menuItem._id,
+      orderItemsFinal.push({
+        menuItemId: menuItem.id,
         name: menuItem.name,
         price: menuItem.price,
         finalPrice: menuItem.finalPrice,
@@ -47,22 +54,30 @@ export const createOrder = async (req, res) => {
 
     const tax = Math.round(subtotal * 0.05); // 5% tax
     const totalAmount = subtotal + tax - (discount || 0);
+    const orderId = generateOrderId();
 
-    const order = new Order({
-      restaurantId: req.restaurantId,
-      items: orderItems,
-      subtotal,
-      tax,
-      totalAmount,
-      customerPhone,
-      customerName,
-      paymentMethod,
-      discount: discount || 0,
-      notes,
-      paymentStatus: paymentMethod === 'cash' ? 'pending' : 'pending',
+    // Create order and items in a transaction
+    const order = await prisma.order.create({
+      data: {
+        restaurantId: req.restaurantId,
+        orderId,
+        subtotal,
+        tax,
+        totalAmount,
+        customerPhone,
+        customerName,
+        paymentMethod,
+        discount: parseFloat(discount || 0),
+        notes,
+        paymentStatus: 'pending',
+        items: {
+          create: orderItemsFinal
+        }
+      },
+      include: {
+        items: true
+      }
     });
-
-    await order.save();
 
     // If payment method is card/upi, create Razorpay order if credentials available
     if ((paymentMethod === 'upi' || paymentMethod === 'card') && razorpay) {
@@ -73,18 +88,20 @@ export const createOrder = async (req, res) => {
           receipt: order.orderId,
         });
 
-        order.razorpayOrderId = razorpayOrder.id;
-        await order.save();
+        const updatedOrder = await prisma.order.update({
+          where: { id: order.id },
+          data: { razorpayOrderId: razorpayOrder.id },
+          include: { items: true }
+        });
 
         return res.status(201).json({
           message: 'Order created successfully',
-          order,
+          order: updatedOrder,
           razorpayOrderId: razorpayOrder.id,
           razorpayKeyId: process.env.RAZORPAY_KEY_ID,
         });
       } catch (razorpayError) {
         console.warn('Razorpay error:', razorpayError.message);
-        // Fall back to returning order without Razorpay
       }
     }
 
@@ -101,40 +118,62 @@ export const verifyPayment = async (req, res) => {
   try {
     const { orderId, razorpayPaymentId, razorpaySignature } = req.body;
 
-    const order = await Order.findOne({
-      orderId,
-      restaurantId: req.restaurantId,
+    const order = await prisma.order.findUnique({
+      where: { orderId },
+      include: { items: true }
     });
 
-    if (!order) {
+    if (!order || order.restaurantId !== req.restaurantId) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
     // Verify signature (basic implementation)
-    order.razorpayPaymentId = razorpayPaymentId;
-    order.paymentStatus = 'paid';
-    order.orderStatus = 'confirmed';
-    await order.save();
+    const updatedOrder = await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        razorpayPaymentId,
+        paymentStatus: 'paid',
+        orderStatus: 'confirmed'
+      },
+      include: { items: true }
+    });
 
     // Update or create sales record
     const date = new Date();
     date.setHours(0, 0, 0, 0);
 
-    await Sales.findOneAndUpdate(
-      { restaurantId: req.restaurantId, date },
-      {
-        $inc: {
-          dailyTotal: order.totalAmount,
-          orderCount: 1,
-          'paymentSummary.upi': order.totalAmount,
-        },
+    const paymentField = 'upi'; // For Razorpay
+    
+    // In PostgreSQL/Prisma, updating Json fields directly with increment is harder, 
+    // so we handle the Sales aggregation carefully.
+    const currentSales = await prisma.sale.findFirst({
+        where: { restaurantId: req.restaurantId, date }
+    });
+
+    let paymentSummary = currentSales?.paymentSummary || { upi: 0, card: 0, cash: 0, wallet: 0 };
+    paymentSummary[paymentField] = (paymentSummary[paymentField] || 0) + order.totalAmount;
+
+    await prisma.sale.upsert({
+      where: { 
+          id: currentSales?.id || 'new-sale' // Prisma requires a unique identifier for upsert
       },
-      { upsert: true }
-    );
+      create: {
+        restaurantId: req.restaurantId,
+        date,
+        dailyTotal: order.totalAmount,
+        orderCount: 1,
+        paymentSummary: paymentSummary
+      },
+      update: {
+        dailyTotal: { increment: order.totalAmount },
+        orderCount: { increment: 1 },
+        paymentSummary: paymentSummary
+      }
+    });
 
     res.status(200).json({
       message: 'Payment verified successfully',
-      order,
+      order: updatedOrder,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -145,39 +184,57 @@ export const markAsPaid = async (req, res) => {
   try {
     const { orderId } = req.params;
 
-    const order = await Order.findOneAndUpdate(
-      { orderId, restaurantId: req.restaurantId },
-      {
+    const order = await prisma.order.findUnique({
+      where: { orderId },
+      include: { items: true }
+    });
+
+    if (!order || order.restaurantId !== req.restaurantId) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: order.id },
+      data: {
         paymentStatus: 'paid',
         orderStatus: 'confirmed',
       },
-      { new: true }
-    );
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
+      include: { items: true }
+    });
 
     // Update sales
     const date = new Date();
     date.setHours(0, 0, 0, 0);
 
     const paymentKey = order.paymentMethod;
-    await Sales.findOneAndUpdate(
-      { restaurantId: req.restaurantId, date },
-      {
-        $inc: {
-          dailyTotal: order.totalAmount,
-          orderCount: 1,
-          [`paymentSummary.${paymentKey}`]: order.totalAmount,
-        },
+    const currentSales = await prisma.sale.findFirst({
+        where: { restaurantId: req.restaurantId, date }
+    });
+
+    let paymentSummary = currentSales?.paymentSummary || { upi: 0, card: 0, cash: 0, wallet: 0 };
+    paymentSummary[paymentKey] = (paymentSummary[paymentKey] || 0) + order.totalAmount;
+
+    await prisma.sale.upsert({
+      where: { 
+          id: currentSales?.id || 'new-sale-mark-paid'
       },
-      { upsert: true }
-    );
+      create: {
+        restaurantId: req.restaurantId,
+        date,
+        dailyTotal: order.totalAmount,
+        orderCount: 1,
+        paymentSummary: paymentSummary
+      },
+      update: {
+        dailyTotal: { increment: order.totalAmount },
+        orderCount: { increment: 1 },
+        paymentSummary: paymentSummary
+      }
+    });
 
     res.status(200).json({
       message: 'Order marked as paid',
-      order,
+      order: updatedOrder,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -188,22 +245,26 @@ export const getOrders = async (req, res) => {
   try {
     const { status, paymentStatus, startDate, endDate } = req.query;
 
-    let filter = { restaurantId: req.restaurantId };
+    let where = { restaurantId: req.restaurantId };
 
-    if (status) filter.orderStatus = status;
-    if (paymentStatus) filter.paymentStatus = paymentStatus;
+    if (status) where.orderStatus = status;
+    if (paymentStatus) where.paymentStatus = paymentStatus;
 
     if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
       if (endDate) {
         const date = new Date(endDate);
         date.setHours(23, 59, 59, 999);
-        filter.createdAt.$lte = date;
+        where.createdAt.lte = date;
       }
     }
 
-    const orders = await Order.find(filter).sort({ createdAt: -1 }).populate('items.menuItemId');
+    const orders = await prisma.order.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { items: { include: { menuItem: true } } }
+    });
 
     res.status(200).json(orders);
   } catch (error) {
@@ -215,12 +276,12 @@ export const getOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
 
-    const order = await Order.findOne({
-      orderId,
-      restaurantId: req.restaurantId,
-    }).populate('items.menuItemId');
+    const order = await prisma.order.findUnique({
+      where: { orderId },
+      include: { items: { include: { menuItem: true } } }
+    });
 
-    if (!order) {
+    if (!order || order.restaurantId !== req.restaurantId) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
@@ -235,22 +296,28 @@ export const editOrder = async (req, res) => {
     const { orderId } = req.params;
     const { items, customerPhone, customerName, notes, discount } = req.body;
 
-    const order = await Order.findOne({
-      orderId,
-      restaurantId: req.restaurantId,
+    const order = await prisma.order.findUnique({
+      where: { orderId },
+      include: { items: true }
     });
 
-    if (!order) {
+    if (!order || order.restaurantId !== req.restaurantId) {
       return res.status(404).json({ error: 'Order not found' });
     }
+
+    let updateData = {
+        customerPhone: customerPhone || order.customerPhone,
+        customerName: customerName || order.customerName,
+        notes: notes || order.notes,
+    };
 
     // Recalculate if items are being updated
     if (items) {
       let subtotal = 0;
-      let orderItems = [];
+      const orderItemsFinal = [];
 
       for (const item of items) {
-        const menuItem = await MenuItem.findById(item.menuItemId);
+        const menuItem = await prisma.menuItem.findUnique({ where: { id: item.menuItemId } });
 
         if (!menuItem) {
           return res.status(400).json({ error: 'Invalid menu item' });
@@ -259,8 +326,8 @@ export const editOrder = async (req, res) => {
         const itemTotal = menuItem.finalPrice * item.quantity;
         subtotal += itemTotal;
 
-        orderItems.push({
-          menuItemId: menuItem._id,
+        orderItemsFinal.push({
+          menuItemId: menuItem.id,
           name: menuItem.name,
           price: menuItem.price,
           finalPrice: menuItem.finalPrice,
@@ -273,22 +340,39 @@ export const editOrder = async (req, res) => {
       const tax = Math.round(subtotal * 0.05);
       const totalAmount = subtotal + tax - (discount || 0);
 
-      order.items = orderItems;
-      order.subtotal = subtotal;
-      order.tax = tax;
-      order.totalAmount = totalAmount;
-      order.discount = discount || 0;
+      updateData.subtotal = subtotal;
+      updateData.tax = tax;
+      updateData.totalAmount = totalAmount;
+      updateData.discount = parseFloat(discount || 0);
+      
+      // Delete old items and create new ones in a transaction
+      await prisma.$transaction([
+          prisma.orderItem.deleteMany({ where: { orderId: order.id } }),
+          prisma.order.update({
+              where: { id: order.id },
+              data: {
+                  ...updateData,
+                  items: {
+                      create: orderItemsFinal
+                  }
+              }
+          })
+      ]);
+    } else {
+        await prisma.order.update({
+            where: { id: order.id },
+            data: updateData
+        });
     }
 
-    if (customerPhone) order.customerPhone = customerPhone;
-    if (customerName) order.customerName = customerName;
-    if (notes) order.notes = notes;
-
-    await order.save();
+    const updatedOrder = await prisma.order.findUnique({
+        where: { id: order.id },
+        include: { items: true }
+    });
 
     res.status(200).json({
       message: 'Order updated successfully',
-      order,
+      order: updatedOrder,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -299,15 +383,11 @@ export const cancelOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
 
-    const order = await Order.findOneAndUpdate(
-      { orderId, restaurantId: req.restaurantId },
-      { orderStatus: 'cancelled', paymentStatus: 'refunded' },
-      { new: true }
-    );
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
+    const order = await prisma.order.update({
+      where: { orderId, restaurantId: req.restaurantId },
+      data: { orderStatus: 'cancelled', paymentStatus: 'refunded' },
+      include: { items: true }
+    });
 
     res.status(200).json({
       message: 'Order cancelled successfully',

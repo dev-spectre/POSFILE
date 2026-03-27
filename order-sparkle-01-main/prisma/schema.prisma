@@ -1,0 +1,124 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Restaurant {
+  id                 String    @id @default(cuid())
+  restaurantName     String    @unique
+  adminUsername      String    @unique
+  adminEmail         String    @unique
+  password           String
+  phoneNumber        String
+  address            String
+  city               String?
+  state              String?
+  zipCode            String?
+  cuisineType        String    @default("Multi-cuisine")
+  logo               String?
+  isActive           Boolean   @default(true)
+  subscriptionStatus String    @default("free") // free, premium, enterprise
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  menuItems          MenuItem[]
+  orders             Order[]
+  sales              Sale[]
+}
+
+model MenuItem {
+  id                 String     @id @default(cuid())
+  restaurantId       String
+  restaurant         Restaurant @relation(fields: [restaurantId], references: [id])
+  name               String
+  description        String?
+  category           String     // enum-like: Appetizers, Main Course, etc.
+  price              Float
+  discountPercentage Float      @default(0)
+  finalPrice         Float
+  image              String?
+  isAvailable        Boolean    @default(true)
+  preparationTime    Int?       // in minutes
+  isVeg              Boolean    @default(false)
+  rating             Float      @default(0)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  orderItems         OrderItem[]
+
+  @@index([restaurantId, category])
+}
+
+model Order {
+  id                  String      @id @default(cuid())
+  restaurantId        String
+  restaurant          Restaurant  @relation(fields: [restaurantId], references: [id])
+  orderId             String      @unique // Human readable ORD-...
+  subtotal            Float       @default(0)
+  tax                 Float       @default(0)
+  totalAmount         Float
+  paymentMethod       String      // upi, card, cash, wallet
+  paymentStatus       String      @default("pending") // pending, paid, failed, refunded
+  razorpayOrderId     String?
+  razorpayPaymentId   String?
+  customerPhone       String
+  customerName        String?
+  orderStatus         String      @default("pending") // pending, confirmed, preparing, ready, delivered, cancelled
+  notes               String?
+  whatsappMessageSent Boolean     @default(false)
+  whatsappMessageId   String?
+  discount            Float       @default(0)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  items               OrderItem[]
+
+  @@index([restaurantId, createdAt])
+  @@index([restaurantId, paymentStatus])
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id])
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  name       String
+  price      Float
+  finalPrice Float
+  quantity   Int
+  discount   Float?
+  itemTotal  Float
+
+  @@index([orderId])
+}
+
+model Sale {
+  id                 String     @id @default(cuid())
+  restaurantId       String
+  restaurant         Restaurant @relation(fields: [restaurantId], references: [id])
+  date               DateTime
+  dailyTotal         Float      @default(0)
+  orderCount         Int        @default(0)
+  weeklyTotal        Float      @default(0)
+  weeklyOrderCount   Int        @default(0)
+  monthlyTotal       Float      @default(0)
+  monthlyOrderCount  Int        @default(0)
+  
+  // Storing JSON for simplicity, equivalent to MongoDB nested objects
+  paymentSummary     Json?      // { upi, card, cash, wallet }
+  topItems           Json?      // [ { menuItemId, name, quantity, revenue } ]
+  categoryWiseSales  Json?      // [ { category, revenue, orderCount } ]
+
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@index([restaurantId, date])
+}

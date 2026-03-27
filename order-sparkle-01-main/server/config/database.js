@@ -1,38 +1,51 @@
-import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import pg from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '@prisma/client';
 
-let isConnected = false;
+const { Pool } = pg;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+const dbUrl = process.env.DATABASE_URL?.trim();
+console.log('📡 Database URL loaded:', dbUrl ? `FOUND (length: ${dbUrl.length})` : 'MISSING');
+
+const pool = new Pool({ connectionString: dbUrl });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 const connectDB = async () => {
-  if (isConnected) {
-    console.log('✅ Using existing MongoDB connection');
-    return;
-  }
-
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/restaurant-pos';
+    console.log('📡 Attempting demo seeding...');
     
-    await mongoose.connect(mongoURI, {
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      retryWrites: true,
-      w: 'majority',
+    // Seed demo restaurant for Demo Mode
+    await prisma.restaurant.upsert({
+      where: { id: 'demo-restaurant-id' },
+      update: {},
+      create: {
+        id: 'demo-restaurant-id',
+        restaurantName: 'Demo Restaurant',
+        adminUsername: 'demo',
+        adminEmail: 'demo@restaurant.com',
+        password: 'demo-password-hashed',
+        phoneNumber: '0000000000',
+        address: 'Demo Street',
+      }
     });
-
-    isConnected = true;
-    console.log('✅ MongoDB connected successfully');
-  } catch (error) {
-    console.warn('⚠️  MongoDB connection failed:', error.message);
-    console.warn('⚠️  Make sure MongoDB is running or provide MONGODB_URI');
-    console.log('📌 To start MongoDB locally:');
-    console.log('   mongod --dbpath "C:\\data\\db"');
-    console.log('');
-    console.log('📌 Or use MongoDB Atlas: https://www.mongodb.com/cloud/atlas');
+    console.log('✅ Demo restaurant seeded/verified');
     
-    // Don't exit, let the server continue (will fail on DB operations)
+  } catch (error) {
+    console.error('❌ Postgres seeding failed:', error);
+    console.log('📌 Stack trace:', error.stack);
+    
+    // Retry connection
     setTimeout(() => {
-      connectDB(); // Retry connection
+      connectDB();
     }, 5000);
   }
 };
 
+export { prisma };
 export default connectDB;
