@@ -5,7 +5,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  serverExternalPackages: ["@prisma/client", "bcryptjs"]
+  serverExternalPackages: ["@prisma/client", "bcryptjs"],
+  trailingSlash: true,
 };
 
 export default nextConfig;
