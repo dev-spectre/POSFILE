@@ -38,7 +38,7 @@ export default function Dashboard() {
   const stats = [
     {
       title: 'Today\'s Revenue',
-      value: `₹${Math.trunc(dailySales?.dailyTotal) === dailySales?.dailyTotal ? dailySales?.dailyTotal : dailySales?.dailyTotal.toFixed(2) || 0}`,
+      value: `₹${dailySales?.dailyTotal != null ? (Number.isInteger(dailySales.dailyTotal) ? dailySales.dailyTotal : dailySales.dailyTotal.toFixed(2)) : 0}`,
       trend: '+12.5%',
       icon: <DollarSign className="h-5 w-5" />,
       color: 'bg-orange-500',

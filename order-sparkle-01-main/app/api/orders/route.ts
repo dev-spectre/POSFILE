@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 
 import { routeAdapter } from '@/lib/apiAdapter';
 import * as orderController from '@/server/controllers/orderController';

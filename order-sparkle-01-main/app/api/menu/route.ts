@@ -1,4 +1,4 @@
-
+export const dynamic = "force-dynamic";
 import { routeAdapter } from '@/lib/apiAdapter';
 import * as menuController from '@/server/controllers/menuController';
 
