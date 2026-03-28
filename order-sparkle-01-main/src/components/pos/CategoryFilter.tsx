@@ -1,3 +1,5 @@
+"use client";
+
 import { motion } from 'framer-motion';
 
 const categories = ['All', 'Starters', 'Main Course', 'Drinks', 'Desserts'];

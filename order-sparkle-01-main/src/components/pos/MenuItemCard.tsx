@@ -1,3 +1,5 @@
+"use client";
+
 import { Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { MenuItem } from '@/store/posStore';
